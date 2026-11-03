@@ -29,10 +29,42 @@ S = "C:/Users/me/secret.txt"
         r"\usetikzlibrary{../../x}",
         r"\catcode`\@=11",
         r"\filedump offset 0 length 100 {" + S + "}",
+        # 2026-11-03 점검: 정규식(_FILE_KEYWORD_RE)을 피해 \addplot·plot으로 파일을 읽고 gnuplot 파일을 쓰던 입력
+        r"\begin{axis}\addplot table[comment chars={]}]{" + S + r"};\end{axis}",
+        "\\def\\f{" + S + "}\n\\begin{axis}\\addplot table \\f;\\end{axis}",
+        "\\def\\f{" + S + "}\n\\draw plot file \\f;",
+        r"\begin{axis}\addplot gnuplot[id={]}]{x^2};\end{axis}",
+        "\\def\\g{x^2}\n\\begin{axis}\\addplot gnuplot \\g;\\end{axis}",
+        r"$\def\f{" + S + r"}\tikz\draw plot file \f;$",
+        r"\draw plot function {x^2};",
+        r"\draw[domain=0:1] plot[id={../x}] function {x};",
+        r"\begin{axis}\addplot3+[a={]}] plot[b] file {" + S + r"};\end{axis}",
+        r"\begin{axis}\addplot+ [red]  shell {echo};\end{axis}",
+        r"\begin{axis}\addplot graphics[xmin=0] {" + S + r"};\end{axis}",
+        r"\begin{axis}\addplot function {x};\end{axis}",
+        r"\def\p{\addplot}\begin{axis}\p table {" + S + r"};\end{axis}",
+        r"\let\p\addplot\begin{axis}\p table {" + S + r"};\end{axis}",
+        r"\def\a{plot fi}\draw \a le{" + S + "};",
+        r"\begin{axis}\addplot3[contour gnuplot] coordinates {(0,0,0)};\end{axis}",
+        r"\pgfplotxyfile{" + S + "}",
+        r"\pgfplotscolormaptodatafile{viridis}{../x.dat}",
     ],
 )
 def test_attacks_are_rejected(code):
     assert check(code), code
+
+
+@pytest.mark.parametrize(
+    "code, fragment",
+    [
+        (r"\begin{axis}\addplot table[x=a]{d.csv};\end{axis}", "\\addplot table"),
+        ("\\def\\f{d}\n\\draw plot file \\f;", "plot file"),
+        (r"\begin{axis}\addplot \data;\end{axis}", "\\addplot \\data"),
+    ],
+)
+def test_plot_source_errors_point_to_coordinates(code, fragment):
+    message = " ".join(check(code))
+    assert fragment in message and "coordinates {(0,1) (1,2)}" in message
 
 
 def test_full_document_allows_preamble_but_not_input():
@@ -57,6 +89,12 @@ def test_full_document_allows_preamble_but_not_input():
         r"\node {$\begin{pmatrix} 1 & 0 \\ 0 & 1 \end{pmatrix}$};",
         r"\node {저항 $R$ 50\% 지점}; % 주석 속 \input{x}는 괜찮다",
         r"\pgfmathsetmacro\a{2*3}\draw (0,0) -- (\a,0);",
+        r"\begin{axis}\addplot {x^2};\addplot+[red] coordinates {(0,1)};\addplot3[surf] {x*y};\end{axis}",
+        "\\begin{axis}\\addplot[thick,\n  domain={-1:1}]\n  {f(x)};\\addplot expression {x};\\addplot (x, x^2);\\end{axis}",
+        r"\begin{axis}\addplot[fill=blue] fill between[of=A and B];\addplot plot coordinates {(0,0)};\end{axis}",
+        r"\draw[domain=0:1, samples=40, smooth] plot (\x, {\x^2}); \draw plot[mark=*] coordinates {(0,0) (1,1)};",
+        r"\node {table, file, gnuplot, a plot};",
+        r"\node[align=center] {data table\\ boxplot of x};",
     ],
 )
 def test_ordinary_code_passes(code):

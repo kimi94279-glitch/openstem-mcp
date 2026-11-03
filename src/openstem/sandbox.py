@@ -11,6 +11,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -31,6 +32,24 @@ def default_timeout() -> float:
         except ValueError:
             pass
     return DEFAULT_TIMEOUT
+
+
+# 자식 프로세스(작업자·tectonic·pandoc)는 외부 입력을 다루므로 서버의 비밀 환경변수를 물려주지 않는다.
+# 프록시·인증서·캐시 폴더(HTTPS_PROXY, SSL_CERT_FILE, HOME, LOCALAPPDATA, XDG_CACHE_HOME 등)는 남긴다:
+# tectonic이 TeX 번들을 받으려면 필요하다.
+_SECRET_PREFIXES = ("OPENSTEM_LMS_",)
+_SECRET_NAME_RE = re.compile(r"TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|ACCESS_?KEY|CREDENTIAL|PRIVATE_?KEY", re.IGNORECASE)
+
+
+def _is_secret(name: str) -> bool:
+    return name.upper().startswith(_SECRET_PREFIXES) or bool(_SECRET_NAME_RE.search(name))
+
+
+def child_env(extra: dict[str, str] | None = None) -> dict[str, str]:
+    """자식 프로세스에 줄 환경: os.environ에서 비밀로 보이는 변수를 뺀 것 + extra."""
+    env = {k: v for k, v in os.environ.items() if not _is_secret(k)}
+    env.update(extra or {})
+    return env
 
 
 @dataclass
@@ -58,6 +77,8 @@ def run(
 ) -> RunResult:
     """`args`를 셸 없이 실행한다. 시간이 넘으면 프로세스를 죽이고 timed_out=True를 돌려준다.
 
+    env를 주지 않으면 `child_env()`(비밀 환경변수를 뺀 서버 환경)를 쓴다.
+
     stdin은 `input`만 넘기고 막는다: MCP stdio 서버에서 자식이 서버의 stdin(프로토콜 스트림)을 읽으면 안 된다.
     """
     kwargs: dict = {}
@@ -73,7 +94,7 @@ def run(
             cwd=cwd,
             capture_output=True,
             timeout=timeout if timeout is not None else default_timeout(),
-            env=env,
+            env=env if env is not None else child_env(),
             **kwargs,
         )
     except subprocess.TimeoutExpired as exc:
@@ -104,7 +125,7 @@ def _spawn(module: str) -> subprocess.Popen[bytes]:
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        env=dict(os.environ, MPLBACKEND="Agg", PYTHONIOENCODING="utf-8"),
+        env=child_env({"MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"}),
         **kwargs,
     )
 

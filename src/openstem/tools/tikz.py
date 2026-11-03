@@ -23,6 +23,26 @@ HANGUL_SETUP = (
     # XeTeX가 "failed to create linebreak iterator"로 죽는다. 한글은 띄어쓰기에서 줄을 바꾸고 나머지는 xetexko가 맡으므로 끈다.
     r'\AtBeginDocument{\XeTeXlinebreaklocale ""}'
 )
+# 그림 데이터를 파일·gnuplot에서 가져오는 pgf·pgfplots 내부 명령을 TeX 쪽에서 끈다(texcheck의 두 번째 방어선).
+# TikZ 경로는 매크로를 펼쳐 읽으므로 \def\a{p}\draw \a lot file{…}처럼 낱말을 나눠 쓰면 토큰 검사로는 다 못 잡는다.
+# 그래서 실제로 파일을 여는 쪽(plot file → \pgfplotxyfile, plot function → \pgfplotgnuplot, \addplot table·file·
+# gnuplot·graphics·shell·function, contour external)을 에러로 바꾼다. 사용자 코드는 @ 이름을 쓸 수 없어(catcode
+# 바꾸기 금지) 되돌리지 못한다. 패키지를 다 불러온 뒤, \begin{document} 바로 앞(같은 줄)에 넣는다.
+FILE_GUARD = (
+    r"\makeatletter"
+    r"\def\openstem@nofile{\PackageError{openstem}{Plot data from files, tables or gnuplot is disabled."
+    r" Use coordinates {(0,1) (1,2)} or a formula}{}}"
+    + "".join(
+        rf"\def\{name}{{\openstem@nofile}}"
+        for name in (
+            "pgfplotxyfile", "pgfplotxyzfile", "pgfplotgnuplot", "pgfplotscolormaptodatafile",
+            "pgfplotsplothandlertofile", "pgfplots@addplotimpl@table", "pgfplots@addplotimpl@file",
+            "pgfplots@addplotimpl@gnuplot", "pgfplots@addplotimpl@graphics", "pgfplots@addplotimpl@shell",
+            "pgfplots@addplotimpl@function",
+        )
+    )
+    + r"\makeatother"
+)
 # 허용목록 밖이지만 LLM이 습관처럼 넣는 패키지: 왜 필요 없는지 알려준다.
 _UNNEEDED = {
     "xcolor": "tikz already loads it",
@@ -159,14 +179,14 @@ def _full_document(code: str, stripped: str, packages: list[str], libraries: lis
         raise InputError(errors)
 
     # 줄 번호가 바뀌지 않게 \begin{document}와 같은 줄 앞에 끼워 넣는다.
-    inject = ""
+    inject = FILE_GUARD
     if "pgfplots" in used and "compat=" not in stripped:
         inject += PGFPLOTS_COMPAT
     if _HANGUL_RE.search(stripped):
         inject += HANGUL_SETUP
         if "amsmath" in used:
             code = wrap_hangul_in_math(code)
-    source = _BEGIN_DOCUMENT_RE.sub(lambda mm: inject + mm.group(0), code, count=1) if inject else code
+    source = _BEGIN_DOCUMENT_RE.sub(lambda mm: inject + mm.group(0), code, count=1)
 
     warnings = []
     if packages or libraries:
@@ -204,7 +224,7 @@ def build_document(code: str, packages: list[str] | None = None, libraries: list
     if _HANGUL_RE.search(stripped):
         header.append(HANGUL_SETUP)
         code = wrap_hangul_in_math(code)
-    header.append(r"\begin{document}")
+    header.append(FILE_GUARD + r"\begin{document}")
 
     wrap = not _PICTURE_RE.search(stripped)
     if wrap:
