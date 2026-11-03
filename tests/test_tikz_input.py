@@ -204,3 +204,71 @@ def test_new_stem_does_not_overwrite(output_dir):
     first.with_suffix(".svg").write_text("x")
     second = output.new_stem("same")
     assert second != first and second.parent == output_dir
+
+
+# ── 파일 접근 막기: TeX 쪽 두 번째 방어선(FILE_GUARD) ─────────────────────
+# texcheck를 거치지 않은 코드를 FILE_GUARD가 든 문서에 넣고 컴파일한다. 읽힐 파일은 시험이 만든 임시 파일이다.
+
+SECRET = "OPENSTEM-SECRET-LINE"
+
+
+def _compile_bypassing_check(code, workdir, pgfplots=False):
+    from openstem.render import latex
+
+    base = "\\begin{axis}\\addplot {x};\\end{axis}" if pgfplots else "\\draw (0,0) -- (1,1);"
+    doc = build_document(base)
+    assert base in doc.source
+    result = latex.compile_tex(doc.source.replace(base, code), workdir)
+    log = (workdir / "figure.log").read_text(encoding="utf-8", errors="replace") if (workdir / "figure.log").exists() else ""
+    return result, log
+
+
+@pytest.mark.parametrize(
+    "code, pgfplots",
+    [
+        ("\\draw plot file {SECRET};", False),
+        ("\\begin{axis}\\addplot table {SECRET};\\end{axis}", True),
+        ("\\begin{axis}\\addplot file {SECRET};\\end{axis}", True),
+    ],
+)
+def test_file_guard_stops_plot_file_reads(tmp_path, tectonic, code, pgfplots):
+    secret = tmp_path / "secret.txt"
+    secret.write_text(f"{SECRET} 1\n", encoding="utf-8")
+    workdir = tmp_path / "work"
+    workdir.mkdir()
+    result, log = _compile_bypassing_check(code.replace("SECRET", secret.as_posix()), workdir, pgfplots)
+    assert not result.ok
+    assert SECRET not in " ".join(result.errors) and SECRET not in log
+    assert "disabled" in " ".join(result.errors)
+
+
+@pytest.mark.parametrize(
+    "code, pgfplots",
+    [
+        ("\\draw[domain=0:1] plot[id=leak] function {x};", False),
+        ("\\begin{axis}\\addplot gnuplot[id=leak] {x^2};\\end{axis}", True),
+    ],
+)
+def test_file_guard_stops_gnuplot_writes(tmp_path, tectonic, code, pgfplots):
+    result, _ = _compile_bypassing_check(code, tmp_path, pgfplots)
+    assert not result.ok
+    assert not list(tmp_path.glob("*.gnuplot")) and not list(tmp_path.glob("*.table"))
+
+
+def test_plot_word_split_by_macro_is_caught_by_guard(tmp_path, tectonic):
+    """TikZ 경로는 매크로를 펼쳐 읽어 \\a lot function 처럼 plot을 나눠 쓸 수 있다. texcheck가 못 보아도 TeX에서 막힌다."""
+    from openstem.render import latex
+
+    doc = build_document("\\def\\x{x}\\def\\a{p}\\draw[domain=0:1] \\a lot function\\x;")
+    result = latex.compile_tex(doc.source, tmp_path)
+    assert not result.ok and not list(tmp_path.glob("*.gnuplot"))
+
+
+def test_file_guard_is_in_every_document():
+    from openstem.tools.tikz import FILE_GUARD
+
+    assert FILE_GUARD in build_document("\\draw (0,0);").source
+    full = "\\documentclass{standalone}\n\\usepackage{pgfplots}\n\\begin{document}\n\\tikz \\draw (0,0);\n\\end{document}"
+    doc = build_document(full)
+    assert FILE_GUARD in doc.source and doc.source.index(FILE_GUARD) < doc.source.index("\\begin{document}")
+    assert doc.source.count("\n") == full.count("\n")  # 줄 번호가 바뀌지 않는다

@@ -263,6 +263,8 @@ def test_flashcards_make_mirrored_pdf_and_tsv(output_dir, tectonic):
         ("| 앞면 | 뒷면 |\n|---|---|\n| 질문 |  |\n", "pdf", "back is empty"),
         (CARDS, "docx", 'format="pdf"'),
         ("| 앞면 | 뒷면 |\n|---|---|\n| $\\input{x}$ | 답 |\n", "pdf", "\\input"),
+        # 2026-11-03 점검: 카드 머리말이 tikz를 불러와서 수식 안의 plot file로 파일을 읽을 수 있었다
+        ("| 앞면 | 뒷면 |\n|---|---|\n| $\\def\\f{C:/Users/me/secret.txt}\\tikz\\draw plot file \\f;$ | 답 |\n", "pdf", "plot file"),
     ],
 )
 def test_flashcards_rule_errors(output_dir, markdown, fmt, fragment):

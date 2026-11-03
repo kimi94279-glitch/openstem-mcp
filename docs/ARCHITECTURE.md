@@ -116,6 +116,8 @@ openstem-mcp/
 외부 입력을 다루는 프로그램은 모두 `sandbox.py`를 거친다. → [결정 0003](decisions/0003-worker-processes.md)
 
 - `sandbox.run(args, cwd, timeout)`: 외부 실행 파일(tectonic, pandoc)을 셸 없이 실행한다. 시간이 넘으면 죽이고 `timed_out`을 돌려준다. stdin은 막는다(MCP stdio 서버에서 자식이 프로토콜 스트림을 읽으면 안 된다).
+- **자식 환경**: `run`과 작업자는 `sandbox.child_env()` 환경으로 돈다. `OPENSTEM_LMS_*`와 이름에 TOKEN·SECRET·PASSWORD·PASSWD·API_KEY·ACCESS_KEY·CREDENTIAL·PRIVATE_KEY가 든 변수를 빼고, 프록시·인증서·캐시 폴더 변수는 남긴다.
+- **메모리 상한**: POSIX 작업자는 `workers.serve()`가 준비 신호 전에 `RLIMIT_AS`를 건다(기본 3072 MB, `OPENSTEM_WORKER_MEMORY_MB`). `MemoryError`는 "too large to compute" 에러가 된다. macOS는 사실상 먹지 않고 Windows에는 없다([SECURITY.md](../SECURITY.md)).
 - `sandbox.run_python("openstem.workers.<이름>", payload, cwd)`: sympy·RDKit·pymupdf·pint 처리. `python -I -m`(격리 모드: 현재 폴더·`PYTHON*` 환경변수·사용자 site-packages를 보지 않는다)로 빈 임시 폴더에서 돈다. payload는 stdin JSON, 결과는 stdout 마지막 줄 JSON이다(`workers.serve()`가 규약을 맞춘다). 작업자가 만든 파일은 서버가 `output.new_stem`으로 옮긴다.
 - **준비 신호**: 작업자는 import를 마치면 stdout에 `OPENSTEM-READY`를 쓴다. `run_python`은 그 신호를 `IMPORT_TIMEOUT`(180초)까지 기다린 뒤 payload를 보내고, 그때부터 `timeout`(기본 20초)을 센다. 처음 설치한 환경은 .pyc 만들기·matplotlib 글꼴 캐시 때문에 import만 수십 초가 걸려서, 이것을 입력 처리 시간에 넣으면 첫 호출이 늘 시간 초과가 났다. 무거운 import는 신호 전에 끝내야 한다(plot 작업자는 `_preload()`, pint 준비 약 4초도 신호 전). 신호를 이미 읽은 예비 작업자는 `proc.openstem_ready`로 표시한다.
 - **예비 작업자**: sympy import만 프로세스마다 약 5초라, 모듈마다 작업자를 하나씩 미리 띄워 둔다(import를 끝내고 stdin을 기다린다). 요청이 오면 그 작업자를 쓰고 바로 다음 것을 띄운다. 요청 하나에 프로세스 하나라는 분리는 그대로다. 미리 띄운 작업자는 시스템 임시 폴더에서 시작하므로 payload의 `_cwd`로 옮겨 가서 일한다. 서버가 끝나면 stdin이 닫혀 스스로 끝난다. 끄려면 `sandbox.SPARES_ENABLED = False`.
@@ -130,7 +132,7 @@ openstem-mcp/
 ## LaTeX 렌더링
 
 - **tectonic 찾는 순서**: `OPENSTEM_TECTONIC` → PATH → 캐시 폴더 `bin/`(`latex.tectonic_bin_dir()`). 없으면 공식 릴리스를 받아 설치한다(→ [packaging.md](packaging.md#tectonic-자동-준비), [결정 0005](decisions/0005-tectonic-auto-install.md)).
-- **컴파일**: `latex.compile_tex`가 빈 임시 폴더에 `figure.tex`를 쓰고 `tectonic --untrusted`로 컴파일한다. `--untrusted`는 shell-escape만 끄므로, 파일에 닿는 TeX 명령은 컴파일 전에 `texcheck.py`가 막는다(→ [결정 0004](decisions/0004-tex-token-check.md), [SECURITY.md](../SECURITY.md)).
+- **컴파일**: `latex.compile_tex`가 빈 임시 폴더에 `figure.tex`를 쓰고 `tectonic --untrusted`로 컴파일한다. `--untrusted`는 shell-escape만 끄므로, 파일에 닿는 TeX 명령은 컴파일 전에 `texcheck.py`가 막고, render_tikz 문서에는 pgf·pgfplots의 파일 읽기·gnuplot 내부 명령을 끄는 `tikz.FILE_GUARD`가 `\begin{document}` 앞에 들어간다(→ [결정 0004](decisions/0004-tex-token-check.md), [SECURITY.md](../SECURITY.md)).
 - **첫 실행**: TeX 번들을 받느라 약 4분 걸린다(캐시 후 3~6초). 서버 시작 때 준비 표시 파일이 없으면 `BACKGROUND_WARMUP`이 tectonic → TeX 번들 순서로 백그라운드에서 준비하고, 그동안 render_tikz는 최대 40초 기다린 뒤 "준비 중, 잠시 후 다시" 에러를 돌려준다. `openstem-mcp --warmup`으로 미리 받을 수 있다.
 - **준비 표시 파일**: `warm-<버전>`. 위치는 `%LOCALAPPDATA%\openstem`(macOS `~/Library/Caches/openstem`, Linux `~/.cache/openstem`). 이름에 버전이 들어가서, 새 버전을 처음 띄우면 TeX 준비(tikz 문서 + export 배치별 문서)와 파이썬 작업자 준비(`sandbox.warm_workers`)를 백그라운드로 다시 한다. `--warmup`도 둘 다 한다.
 - **에러 줄**: 로그에서 `!` 줄과 `l.<번호>` 줄만 뽑는다. `l.<번호>`와 메시지 속 `input line N`은 생성 문서가 아니라 사용자가 보낸 code 기준으로 바꾸고, 머리말·꼬리말에서 난 에러는 그렇게 표시한다.
@@ -184,6 +186,7 @@ export_document의 처리 순서다. 왜 정규식이 아니라 문서 구조를
 | `OPENSTEM_OUTPUT_DIR` | 결과물 폴더 | `~/OpenSTEM` |
 | `OPENSTEM_INPUT_DIR` | 자료 폴더(read_document가 여는 곳) | `<결과물 폴더>/자료` |
 | `OPENSTEM_TIMEOUT` | 외부 입력 처리 시간 제한(초) | 20 |
+| `OPENSTEM_WORKER_MEMORY_MB` | 파이썬 작업자 메모리 상한(MB, POSIX). 0이면 끔 | 3072 |
 | `OPENSTEM_TECTONIC` | tectonic 실행 파일 경로 | PATH → 캐시 폴더 |
 | `OPENSTEM_NO_DOWNLOAD` | `1`이면 tectonic 자동 설치를 하지 않는다 | 꺼짐 |
 | `OPENSTEM_CONFIG_DIR` | HTTP 모드 비밀 키를 둘 설정 폴더 | OS별 설정 폴더 |

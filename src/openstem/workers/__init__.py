@@ -26,8 +26,47 @@ class WorkerError(Exception):
 
 READY_LINE = "OPENSTEM-READY"  # sandbox.READY_LINE과 같아야 한다
 
+# 작업자 메모리 상한(주소 공간, MB). numpy·sympy·RDKit·pymupdf·matplotlib import와 보통 계산에는 넉넉하고,
+# 2^2^2^2^2^2 같은 폭주 입력이 PC 메모리를 다 쓰기 전에 MemoryError로 끊긴다. 0이면 상한을 두지 않는다.
+MEMORY_ENV = "OPENSTEM_WORKER_MEMORY_MB"
+DEFAULT_MEMORY_MB = 3072
+TOO_LARGE = "The input is too large to compute (worker memory limit). Use smaller numbers or a simpler input."
+
+
+def memory_limit_mb() -> int:
+    raw = os.environ.get(MEMORY_ENV, "").strip()
+    try:
+        return max(0, int(raw)) if raw else DEFAULT_MEMORY_MB
+    except ValueError:
+        return DEFAULT_MEMORY_MB
+
+
+def limit_memory() -> int | None:
+    """POSIX에서 이 프로세스의 주소 공간 상한(RLIMIT_AS)을 둔다. 둔 상한(MB)을 돌려준다.
+
+    Windows에는 resource 모듈이 없어 상한이 없다(Job Object는 아직 쓰지 않는다). macOS는 RLIMIT_AS를
+    잘 지키지 않아 사실상 상한이 없다. 둘 다 SECURITY.md의 알려진 한계에 적어 두었다.
+    """
+    mb = memory_limit_mb()
+    if mb <= 0:
+        return None
+    try:
+        import resource
+    except ImportError:  # Windows
+        return None
+    limit = mb * 1024 * 1024
+    try:
+        _soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+        if hard != resource.RLIM_INFINITY:
+            limit = min(limit, hard)
+        resource.setrlimit(resource.RLIMIT_AS, (limit, hard))
+    except (ValueError, OSError):
+        return None
+    return limit // (1024 * 1024)
+
 
 def serve(handler: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
+    limit_memory()
     sys.stdout.write(READY_LINE + "\n")  # import가 끝났다: 여기서부터 입력 처리 타임아웃을 센다
     sys.stdout.flush()
     raw = sys.stdin.buffer.read()
@@ -39,6 +78,8 @@ def serve(handler: Callable[[dict[str, Any]], dict[str, Any]]) -> None:
     sys.stdout = sys.stderr  # 라이브러리가 찍는 글이 결과 JSON과 섞이지 않게
     try:
         result = handler(payload)
+    except MemoryError:
+        result = {"ok": False, "errors": [TOO_LARGE]}
     except WorkerError as exc:
         result = {"ok": False, "errors": exc.errors}
         if exc.hint:
