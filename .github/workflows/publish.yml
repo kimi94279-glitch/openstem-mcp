@@ -3,36 +3,52 @@
 # pending publisher를 추가한다:
 #   PyPI Project Name: openstem-mcp / Owner: (GitHub 계정) / Repository: openstem-mcp
 #   Workflow name: publish.yml / Environment name: pypi
+# 배포 전에 ci.yml(3개 OS 시험, OPENSTEM_REQUIRE_TEX=1)을 다시 돌려 통과해야 publish·bundle이 돈다.
+# 서드파티 Action은 커밋 SHA로 고정한다(주석은 태그). checkout은 자격 증명을 남기지 않는다(persist-credentials: false).
 name: Publish
 
 on:
   release:
     types: [published]
 
+permissions:
+  contents: read
+
 jobs:
+  test:
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   publish:
+    needs: test
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       id-token: write
       contents: read
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
       - run: uv build
       - run: uv publish --trusted-publishing always
 
   bundle:
+    needs: test
     runs-on: ubuntu-latest
     permissions:
       contents: write  # 릴리스에 파일 올리기
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
         with:
           node-version: 22
-      # 공식 CLI(npx @anthropic-ai/mcpb)로 검사·묶기. 빌드 스크립트는 표준 라이브러리만 쓴다.
+      # 공식 CLI(npx @anthropic-ai/mcpb@<고정 버전>, scripts/build_mcpb.py의 MCPB_CLI)로 검사·묶기. 빌드 스크립트는 표준 라이브러리만 쓴다.
       - run: uv run --no-project python scripts/build_mcpb.py
       - run: gh release upload "${{ github.event.release.tag_name }}" dist/*.mcpb
         env:
@@ -50,11 +66,19 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       TAG: ${{ github.event.release.tag_name }}
       MCP_PUBLISHER_VERSION: v1.8.7
+      # 버전을 올리면 같이 고친다: 릴리스의 registry_<버전>_checksums.txt에서 mcp-publisher_linux_amd64.tar.gz 줄
+      MCP_PUBLISHER_SHA256: 00b21004149a4ce66f0782508ae4a2bce67d1bea395a8da0bd8028159fb59579
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
       - name: Install mcp-publisher
         run: |
           gh release download "$MCP_PUBLISHER_VERSION" -R modelcontextprotocol/registry -p "mcp-publisher_linux_amd64.tar.gz"
+          # 고정한 해시와 맞아야 압축을 연다. 릴리스의 checksums 파일과도 한 번 더 맞춰 본다.
+          echo "$MCP_PUBLISHER_SHA256  mcp-publisher_linux_amd64.tar.gz" | sha256sum -c -
+          gh release download "$MCP_PUBLISHER_VERSION" -R modelcontextprotocol/registry -p "registry_${MCP_PUBLISHER_VERSION#v}_checksums.txt"
+          grep -E '  mcp-publisher_linux_amd64\.tar\.gz$' "registry_${MCP_PUBLISHER_VERSION#v}_checksums.txt" | sha256sum -c -
           tar -xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
       - name: Fill version and bundle hash in server.json
         run: |

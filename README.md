@@ -3,7 +3,7 @@
 <!-- mcp-name: io.github.kimi94279-glitch/openstem-mcp -->
 
 이공계 공부를 돕는 MCP 서버. 이미 쓰고 있는 AI(Claude 등)에 붙이면 **학술 그림을 그리고, 풀이를 검산하고, 강의 자료(PDF·한글 파일)를 읽어 예상문제·슬라이드·암기 카드·실험 보고서를 만들** 수 있다.
-서버는 AI를 따로 부르지 않고 그리기·계산만 하므로 **추가 구독이나 API 키가 필요 없다.** 모든 작업은 내 PC에서 돈다.
+서버는 AI를 따로 부르지 않고 그리기·계산만 하므로 **추가 구독이나 API 키가 필요 없다.** 모든 작업은 내 PC에서 돈다(단, LaTeX 패키지는 처음 쓸 때 tectonic 번들 서버에서 받아 온다. 문서 내용은 보내지 않는다. → [PRIVACY.md](PRIVACY.md)).
 
 > **Your AI. Your Tools. Your Freedom.** 배움은 열려 있어야 한다. 쓰고 싶은 AI 모델과 필요한 도구 사이에서 하나를 고르지 않아도 되게 만든다. → [OpenSTEM 선언문](MANIFESTO.md)
 
@@ -64,8 +64,11 @@ Claude Desktop: 앱을 **완전히 종료**한 뒤(트레이 아이콘 → 종�
 Claude Code:
 
 ```bash
+uvx openstem-mcp --warmup      # 먼저 터미널에서 한 번(패키지 설치 + tectonic·TeX 준비)
 claude mcp add openstem -- uvx openstem-mcp
 ```
+
+첫 `uvx openstem-mcp`는 파이썬 패키지(약 200 MB)를 설치하느라 Claude Code의 서버 시작 제한(기본 30초)을 넘겨 연결이 실패할 수 있다. 위처럼 터미널에서 `--warmup`을 먼저 하거나, 제한을 늘려 띄운다(예: `MCP_TIMEOUT=120000 claude`, 밀리초).
 
 설정을 더 하고 싶으면(선택) 같은 자리에 `env`와 `args`를 넣는다. 예: 결과물 폴더 바꾸기, tectonic 위치 지정, LaTeX 입력 검산 켜기.
 
@@ -88,7 +91,12 @@ macOS에서 앱이 `uvx`나 tectonic을 못 찾으면(앱은 터미널과 PATH�
 
 ## ChatGPT에서 쓰기
 
-ChatGPT는 인터넷의 HTTPS 주소로만 MCP 서버에 붙는다. 그래서 내 PC에서 서버를 HTTP 모드로 켜고, cloudflared로 임시 HTTPS 주소를 연다. ChatGPT 요금제에 따라 사용자 지정 MCP(개발자 모드)를 쓸 수 없거나 읽기 툴만 될 수 있다.
+ChatGPT는 인터넷의 HTTPS 주소로만 MCP 서버에 붙는다. 그래서 내 PC에서 서버를 HTTP 모드로 켜고, cloudflared로 임시 HTTPS 주소를 연다.
+
+> **확인하지 못한 것(2026년 11월)**
+> - 사용자 지정 MCP 서버는 OpenAI 도움말 기준 **Business·Enterprise·Edu 요금제(웹)** 에서 쓸 수 있다. Plus 등 개인 요금제에서 되는지는 확인하지 못했다. 요금제에 따라 메뉴가 없거나 읽기 툴만 될 수 있다.
+> - 툴 결과에 붙인 그림 미리보기(PNG)가 ChatGPT 모델에 실제로 전달되는지 확인하지 못했다. 그림 파일은 이 PC의 결과물 폴더에 저장되니 거기서 연다.
+> - 실제 ChatGPT·cloudflared 연결 시험도 아직이다.
 
 1. cloudflared 설치(한 번만): Windows `winget install --id Cloudflare.cloudflared`, macOS `brew install cloudflared`, Linux는 Cloudflare 문서의 패키지 설치 안내
 2. 서버 켜기: `uvx openstem-mcp --http --tunnel` → 터미널에 `ChatGPT 커넥터 URL: https://….trycloudflare.com/<비밀 키>/mcp`가 나온다
@@ -157,7 +165,9 @@ AI에게 "LMS 지원 학교 목록 보여 줘"라고 하면 목록과 학교별 
 
 주소를 확장 설정의 **LMS 캘린더 주소**(또는 `OPENSTEM_LMS_CALENDAR_URL`)에 넣는다. 이 주소만 있으면 누구나 내 일정을 볼 수 있으니 비밀번호처럼 다룬다(도구도 결과에 싣지 않는다). 토큰과 캘린더 주소를 둘 다 넣으면 토큰을 먼저 쓰고 캘린더에만 있는 일정을 덧붙인다.
 
-**지원 학교 (2026년 11월, 공개 페이지 조사)**
+**연결 시험 대상 (2026년 11월, 공개 페이지 조사)**
+
+> **실제 학교 LMS로 확인한 곳: 아직 없음(고려대 확인 예정).** 아래 표는 각 학교 공개 페이지로 LMS 종류를 조사해 주소를 넣어 둔 목록이고, 기능은 가짜 서버(`tests/fake_lms.py`)로만 시험했다. 내 학교에서 되는지(또는 안 되는지) [학교 LMS 확인 보고](https://github.com/kimi94279-glitch/openstem-mcp/issues/new?template=lms_report.yml)로 알려 주면 "확인한 곳"으로 옮긴다.
 
 | 구분 | 학교 |
 |---|---|
@@ -168,7 +178,8 @@ AI에게 "LMS 지원 학교 목록 보여 줘"라고 하면 목록과 학교별 
 \* 모바일 서비스가 꺼져 있어 토큰 대신 캘린더 주소를 쓴다.
 
 - LearningX 학교는 학생이 아는 주소(예: icampus.skku.edu)와 실제 API 주소(canvas.skku.edu)가 다르다. 학교 이름만 넣으면 알아서 맞는 주소를 쓴다.
-- 고려대·중앙대·경희대 등 일부는 학생이 토큰을 만들 수 있는지 확인하지 못했다. 안 되면 캘린더 주소를 쓴다. 실제 학교 LMS로는 아직 시험하지 못했다(가짜 서버로 시험).
+- 고려대·중앙대·경희대 등 일부는 학생이 토큰을 만들 수 있는지 확인하지 못했다. 안 되면 캘린더 주소를 쓴다.
+- **토큰 정책**: Canvas 공식 API 정책은 여러 사용자가 쓰는 앱이 사용자에게 액세스 토큰을 직접 만들게 하는 대신 OAuth를 쓰도록 요구한다. 이 도구는 각자 자기 PC에서 자기 토큰으로 자기 데이터만 읽지만, 학교가 이 방식을 허용하는지는 학교 정책에 달려 있다. 학교는 학생 토큰 발급을 막거나 만료 기간을 둘 수 있고, 그러면 토큰이 갑자기 안 될 수 있다(그때는 캘린더 주소를 쓴다). 학교 이용 규정을 먼저 확인한다.
 - 지원 안 되는 학교: Blackboard는 캘린더에 iCal 링크가 있으면 마감만 읽을 수 있다(확인 못 함). 그 밖에는 강의 자료를 직접 내려받아 자료 폴더에 넣고 AI에게 읽어 달라고 하면 된다.
 - 목록에 없는 학교도 Canvas나 Moodle이면 **LMS 주소 직접 지정**(`OPENSTEM_LMS_URL`)과 토큰으로 쓸 수 있다.
 

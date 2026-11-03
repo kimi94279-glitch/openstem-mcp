@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 보안 문제
+    url: https://github.com/kimi94279-glitch/openstem-mcp/blob/main/SECURITY.md
+    about: 보안 문제는 공개 이슈가 아니라 SECURITY.md의 방법으로 알려 주세요.

@@ -19,6 +19,9 @@ PGFPLOTS_COMPAT = r"\pgfplotsset{compat=1.18}"
 HANGUL_SETUP = (
     r"\usepackage{xetexko}\setmainhangulfont{UnBatang.ttf}[BoldFont=UnBatangBold.ttf]"
     r"\setsanshangulfont{UnDotum.ttf}[BoldFont=UnDotumBold.ttf]\setmonohangulfont{UnDotum.ttf}"
+    # Linux용 tectonic 0.17.0(musl 정적 빌드)에는 ICU 줄바꿈 데이터가 없어, 줄바꿈 locale("ko")이 켜져 있으면
+    # XeTeX가 "failed to create linebreak iterator"로 죽는다. 한글은 띄어쓰기에서 줄을 바꾸고 나머지는 xetexko가 맡으므로 끈다.
+    r'\AtBeginDocument{\XeTeXlinebreaklocale ""}'
 )
 # 허용목록 밖이지만 LLM이 습관처럼 넣는 패키지: 왜 필요 없는지 알려준다.
 _UNNEEDED = {

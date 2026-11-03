@@ -13,13 +13,40 @@ openstem-mcp가 사용자에게 가는 길, 릴리스 절차, 버전을 올릴 �
 
 ## 릴리스 절차
 
-GitHub에서 릴리스를 만들면 `.github/workflows/publish.yml`이 다음 순서로 돈다.
+GitHub에서 릴리스를 만들기 전에 아래 [릴리스 전 점검(10분)](#릴리스-전-점검10분)을 한다. 릴리스를 만들면 `.github/workflows/publish.yml`이 다음 순서로 돈다.
 
+0. **test**: `ci.yml`을 그대로 불러 ubuntu·windows·macos × Python 3.11·3.14에서 `uv sync --locked --all-extras` → `openstem-mcp --warmup` → `pytest`(`OPENSTEM_REQUIRE_TEX=1`, tectonic이 없으면 건너뛰지 않고 실패). 하나라도 실패하면 아래 작업은 돌지 않는다.
 1. **publish**: `uv build` → `uv publish --trusted-publishing always`(PyPI 신뢰할 수 있는 게시, 토큰 없음). PyPI 쪽 설정(pending publisher)은 관리자가 pypi.org에서 한 번 한다: 프로젝트 `openstem-mcp`, 워크플로 `publish.yml`, 환경 `pypi`.
-2. **bundle**: `scripts/build_mcpb.py`로 `.mcpb`를 묶어 릴리스에 붙인다.
-3. **registry**: 릴리스에 붙은 `.mcpb`의 sha256을 `server.json`에 채우고, PyPI가 새 버전을 내줄 때까지 기다린 뒤 `mcp-publisher login github-oidc` → `publish`.
+2. **bundle**: `scripts/build_mcpb.py`로 `.mcpb`를 묶어 릴리스에 붙인다. 공식 CLI는 `MCPB_CLI`에 정확한 버전(`@anthropic-ai/mcpb@2.1.2`)으로 고정했다.
+3. **registry**: `mcp-publisher`를 받아 워크플로에 고정한 sha256과 릴리스의 `registry_<버전>_checksums.txt`로 확인한 뒤, 릴리스에 붙은 `.mcpb`의 sha256을 `server.json`에 채우고, PyPI가 새 버전을 내줄 때까지 기다린 뒤 `mcp-publisher login github-oidc` → `publish`.
+
+워크플로 공급망: 서드파티 Action은 커밋 SHA로 고정하고(주석에 태그, `git ls-remote https://github.com/<owner>/<repo> refs/tags/<tag>`로 확인), 모든 checkout은 `persist-credentials: false`다. `.github/dependabot.yml`이 Action과 `uv.lock` 갱신 PR을 매주 연다. `MCP_PUBLISHER_VERSION`을 올리면 `MCP_PUBLISHER_SHA256`도 같은 릴리스의 checksums 파일 값으로 고친다.
 
 wheel에 templates·prompts·workers가 다 들어가는지, `uvx --from <wheel> openstem-mcp`로 새 환경에서 띄워 툴이 모두 되는지 확인한다.
+
+## 릴리스 전 점검(10분)
+
+CI는 코드가 시험을 통과하는지만 본다. 사용자가 실제로 설치해 쓰는 길은 사람이 확인한다. 0.3.1·0.3.2는 시험이 실패한 채 배포됐다. 릴리스마다 **새 PC나 새 사용자 계정**(개발 환경의 캐시·PATH·설정이 없는 곳)에서 다음을 하고, 결과를 릴리스 노트에 적는다.
+
+1. **.mcpb 설치 → 회로도 1장**: 이 커밋으로 만든 `.mcpb`를 Claude Desktop에서 더블클릭해 설치하고 "RC 직렬회로 그려 줘"로 그림 1장이 나오는지.
+2. **Claude Code 플러그인 설치 → 검산 1번**: `/plugin install openstem --marketplace kimi94279-glitch/openstem-mcp` 뒤 검산 1번(예: "(x+1)^2 = x^2+2x+1 맞아?").
+3. **시험지 PDF 1개**: 시험지(정답·해설 새 쪽) PDF가 만들어지고 열리는지.
+4. **본인 학교 LMS**: `lms` 툴의 `courses`와 `deadlines`가 되는지(안 되면 에러 글을 토큰 없이 적는다).
+5. **CI 초록불**: 릴리스할 커밋의 CI(3개 OS 모두)가 통과했는지 GitHub Actions에서 확인.
+
+릴리스 노트에 붙일 형식:
+
+```markdown
+### 릴리스 전 점검
+- 환경: Windows 11 새 사용자 계정 / Claude Desktop x.y.z / Claude Code x.y.z
+- (1) .mcpb 설치 → 회로도: 통과
+- (2) 플러그인 → 검산: 통과
+- (3) 시험지 PDF: 통과
+- (4) LMS(○○대) courses·deadlines: 통과 / 실패(이유)
+- (5) CI: 통과 (Actions 실행 링크)
+```
+
+버전을 올리는 PR은 `.github/PULL_REQUEST_TEMPLATE.md`의 "릴리스 PR이면" 체크리스트에 같은 항목이 있다.
 
 ## 버전 올리기
 
@@ -35,6 +62,7 @@ wheel에 templates·prompts·workers가 다 들어가는지, `uvx --from <wheel>
 
 - `scripts/build_mcpb.py` → `dist/openstem-<버전>.mcpb`.
 - `packaging/mcpb/manifest.template.json`에 버전(`__init__.py`)·저자·라이선스·주소·requires-python(pyproject)을 채우고, 저장소와 같은 배치(pyproject·uv.lock·README·LICENSE·src/openstem·templates + launch.py·icon.png)로 모아 공식 CLI(`npx -y @anthropic-ai/mcpb validate`·`pack`)로 묶는다. `--zip`이면 공식 CLI 없이 zipfile로 같은 배치를 만든다.
+- 묶음 루트에 저장소의 `.python-version`(3.12)을 넣는다. 호스트의 uv가 Python을 고르게 두면 rdkit·pymupdf wheel이 아직 없는 새 Python을 골라 설치가 실패한 사례가 있었다. 올릴 때는 `uv.lock`에 그 버전용 rdkit·pymupdf wheel이 있는지 본다(`tests/test_mcpb.py`가 확인한다). 저장소에서 `uv run`도 이 버전을 쓰고, CI는 `UV_PYTHON`으로 덮어써 3.11·3.14를 돈다.
 - manifest 0.4의 `server.type: "uv"`(의존성은 pyproject로 호스트가 설치하고, 묶음에는 소스만 넣는다). 명령은 `uv run --directory ${__dirname} --frozen --no-dev --extra latex launch.py`(묶은 uv.lock 그대로, dev 그룹 제외, LaTeX 수식 입력 켬). `--frozen`이라 빌드 전에 `uv lock --check`로 lock이 최신인지 막는다.
 - uv가 확장 폴더에 `.venv`를 만들고 프로젝트를 편집 설치하므로 템플릿은 루트 `templates/`에서 찾는다.
 - user_config: 결과물 폴더(기본 `${DOCUMENTS}/OpenSTEM`), 자료 폴더, 학교 이름, LMS 토큰·캘린더 주소(둘 다 sensitive), LMS 주소 직접 지정. 각각 env `OPENSTEM_OUTPUT_DIR`·`INPUT_DIR`·`LMS_SCHOOL`·`LMS_TOKEN`·`LMS_CALENDAR_URL`·`LMS_URL`로 간다. 비워 둔 설정은 빈 값이나 `${user_config.x}` 글자 그대로 올 수 있어 `output.env_value()`가 둘 다 "설정 안 함"으로 본다.
