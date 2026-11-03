@@ -24,19 +24,13 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         python: ["3.11", "3.14"]  # requires-python 하한과 최신 하나
         include:
-          # 캐시 폴더: openstem(자동 설치한 tectonic, 준비 표시)과 tectonic 자체 캐시(TeX 번들 파일)
+          # openstem 캐시 폴더(자동 설치한 tectonic, 준비 표시). TeX 번들 파일은 아래 TECTONIC_CACHE_DIR로 모은다.
           - os: ubuntu-latest
-            tex-cache: |
-              ~/.cache/openstem
-              ~/.cache/Tectonic
+            openstem-cache: ~/.cache/openstem
           - os: macos-latest
-            tex-cache: |
-              ~/Library/Caches/openstem
-              ~/Library/Caches/Tectonic
+            openstem-cache: ~/Library/Caches/openstem
           - os: windows-latest
-            tex-cache: |
-              ~\AppData\Local\openstem
-              ~\AppData\Local\TectonicProject
+            openstem-cache: ~\AppData\Local\openstem
     env:
       OPENSTEM_REQUIRE_TEX: "1"
       UV_PYTHON: ${{ matrix.python }}  # 저장소의 .python-version(.mcpb용)보다 우선한다
@@ -44,6 +38,10 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
+      # tectonic 기본 캐시 위치는 OS마다 이름 규칙이 달라(Linux는 ~/.cache/tectonic 소문자) 공식 환경변수로 한곳에 고정한다.
+      - name: Pin tectonic cache location
+        shell: bash
+        run: echo "TECTONIC_CACHE_DIR=${{ runner.temp }}/tectonic-cache" >> "$GITHUB_ENV"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           python-version: ${{ matrix.python }}
@@ -53,11 +51,13 @@ jobs:
         id: tex-cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: ${{ matrix.tex-cache }}
-          key: tex-${{ runner.os }}-py${{ matrix.python }}-${{ hashFiles('src/openstem/render/tectonic_setup.py', 'src/openstem/render/latex.py', 'src/openstem/tools/tikz.py', 'src/openstem/tools/export.py', 'templates/**') }}
+          path: |
+            ${{ matrix.openstem-cache }}
+            ${{ runner.temp }}/tectonic-cache
+          key: tex-v2-${{ runner.os }}-py${{ matrix.python }}-${{ hashFiles('src/openstem/render/tectonic_setup.py', 'src/openstem/render/latex.py', 'src/openstem/tools/tikz.py', 'src/openstem/tools/export.py', 'templates/**') }}
           restore-keys: |
-            tex-${{ runner.os }}-py${{ matrix.python }}-
-            tex-${{ runner.os }}-
+            tex-v2-${{ runner.os }}-py${{ matrix.python }}-
+            tex-v2-${{ runner.os }}-
       - name: Install (uv.lock as is)
         run: uv sync --locked --all-extras
       - name: Prepare tectonic and TeX bundle
@@ -70,7 +70,9 @@ jobs:
         if: steps.warmup.outcome == 'success' && steps.tex-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
-          path: ${{ matrix.tex-cache }}
+          path: |
+            ${{ matrix.openstem-cache }}
+            ${{ runner.temp }}/tectonic-cache
           key: ${{ steps.tex-cache.outputs.cache-primary-key }}
       - name: Test
         run: uv run --locked --all-extras pytest -ra
