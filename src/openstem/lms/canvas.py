@@ -11,14 +11,14 @@ from __future__ import annotations
 import time
 from datetime import datetime, timezone
 from typing import Any
-from urllib.parse import urljoin
 
-from openstem.lms.client import Http, LmsError, Reply, how_to_connect
+from openstem.lms.client import Http, LmsError, Reply, how_to_connect, join_url
 from openstem.lms.common import parse_time
 
 KIND = "canvas"
 MODULE_FILE_LOOKUPS = 200  # 모듈 대체 경로에서 파일 정보를 하나씩 물어보는 최대 개수
 MODULE_LOOKUP_BUDGET = 25.0  # 그 조회에 쓰는 시간(초). 넘으면 이름만 돌려준다
+NOT_SUBMITTABLE = ("planner_note", "calendar_event")  # 낼 것이 없는 플래너 항목(메모·행사): 지나면 overdue가 아니라 past
 
 
 def _zulu(dt: datetime) -> str:
@@ -151,14 +151,15 @@ class Canvas:
         if not self._soft(reply):
             raise self._fail(reply, "deadlines")
         # 플래너가 꺼진 학교: 다가오는 일정(기간 지정 없음, 대개 1~2주)
-        events = self._list("/api/v1/users/self/upcoming_events", "upcoming events", [], max_pages=1)
+        events = self._list("/api/v1/users/self/upcoming_events", "upcoming events",
+                            [("include[]", "submission")], max_pages=1)
         return [d for ev in events if (d := self._event_item(ev))]
 
     def _abs_url(self, raw: Any) -> str | None:
         if not isinstance(raw, str) or not raw:
             return None
-        url = urljoin(self.http.config.base + "/", raw)
-        return url if self.http.same_origin(url) else None
+        url = join_url(self.http.config.base + "/", raw)
+        return url if url and self.http.same_origin(url) else None
 
     def _planner_item(self, it: dict[str, Any]) -> dict[str, Any] | None:
         kind = it.get("plannable_type")
@@ -177,6 +178,7 @@ class Canvas:
             "type": {"planner_note": "note", "discussion_topic": "discussion"}.get(kind, kind),
             "due": due,
             "submitted": submitted,
+            "submittable": kind not in NOT_SUBMITTABLE,
             "url": self._abs_url(it.get("html_url")),
         }
 
@@ -187,14 +189,22 @@ class Canvas:
             return None
         code = str(ev.get("context_code") or "")
         course_id = assignment.get("course_id") or (code[len("course_"):] if code.startswith("course_") else None)
-        submitted = assignment.get("has_submitted_submissions") if assignment else None
+        # has_submitted_submissions는 "누구든 낸 학생이 있는지"라 내 제출 여부가 아니다. 내 제출(submission)이 함께
+        # 오면 그것으로 보고, 없으면 모른다(None).
+        mine = assignment.get("submission") if isinstance(assignment.get("submission"), dict) else None
+        submitted = None
+        if mine is not None:
+            state = str(mine.get("workflow_state") or "")
+            submitted = bool(mine.get("submitted_at")) or state in ("submitted", "pending_review") \
+                or bool(mine.get("excused"))
         return {
             "title": str(ev.get("title") or assignment.get("name") or "(untitled)"),
             "course": ev.get("context_name"),
             "course_id": course_id,
             "type": "assignment" if assignment else str(ev.get("type") or "event"),
             "due": due,
-            "submitted": submitted if isinstance(submitted, bool) else None,
+            "submitted": submitted,
+            "submittable": bool(assignment),
             "url": self._abs_url(ev.get("html_url")),
         }
 
@@ -288,6 +298,12 @@ class Canvas:
                                 "folder": module_name, "locked": False})
         return out
 
+    def _download_url(self, raw: str) -> str:
+        url = join_url(self.http.config.base + "/", raw)
+        if url is None:
+            raise LmsError("The LMS gave a broken download link for this file.")
+        return url
+
     def file_for_download(self, course_id: Any, file_id: str) -> dict[str, Any]:
         reply = self.http.request_json("GET", self.http.url(f"/api/v1/courses/{course_id}/files/{file_id}"))
         if reply.status in (401, 403) and not self.token_rejected(reply):
@@ -304,6 +320,6 @@ class Canvas:
         return {
             "name": str(info.get("display_name") or info.get("filename") or f"file-{file_id}"),
             "size": info.get("size") if isinstance(info.get("size"), int) else None,
-            "url": urljoin(self.http.config.base + "/", str(info["url"])),
+            "url": self._download_url(str(info["url"])),
             "auth": True,  # 같은 origin일 때만 Bearer 헤더(Http.download가 판단)
         }

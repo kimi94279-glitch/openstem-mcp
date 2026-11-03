@@ -11,10 +11,12 @@ from __future__ import annotations
 import time
 from datetime import datetime
 from typing import Any
-from urllib.parse import urljoin, urlsplit
 
 from openstem.lms import ical
-from openstem.lms.client import CALENDAR_ENV, LOOPBACK, MAX_REDIRECTS, TIMEOUT, USER_AGENT, LmsError, httpx, origin_of
+from openstem.lms.client import (
+    CALENDAR_ENV, LOOPBACK, MAX_REDIRECTS, TIMEOUT, USER_AGENT, LmsError, TooSlow, host_of, httpx, join_url, origin_of,
+    send_before, split_url,
+)
 
 FEED_DEADLINE = 30.0
 _COPY_AGAIN = f"Ask the user to copy the calendar URL again from the LMS calendar into {CALENDAR_ENV}."
@@ -23,21 +25,23 @@ _COPY_AGAIN = f"Ask the user to copy the calendar URL again from the LMS calenda
 def fetch(url: str) -> bytes:
     """캘린더 파일을 받는다(2 MB, 30초). 에러 글에 주소를 싣지 않는다."""
     origin = origin_of(url)
-    host = urlsplit(url).hostname or "the LMS"
+    host = host_of(url, "the LMS")
     deadline = time.monotonic() + FEED_DEADLINE
     headers = {"User-Agent": USER_AGENT, "Accept": "text/calendar, */*;q=0.5"}
     with httpx.Client(timeout=TIMEOUT, follow_redirects=False, trust_env=origin[1] not in LOOPBACK,
                       headers=headers) as client:
         for _ in range(MAX_REDIRECTS + 1):
             try:
-                response = client.send(client.build_request("GET", url), stream=True)
+                response = send_before(client, client.build_request("GET", url), deadline)
+            except TooSlow:
+                raise LmsError(f"{host} is sending the calendar too slowly. Try again later.") from None
             except httpx.TimeoutException:
                 raise LmsError(f"{host} did not send the calendar in time. Try again later.") from None
             except httpx.HTTPError:
                 raise LmsError(f"Could not connect to {host} for the calendar feed. Check the network.") from None
             try:
                 if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
-                    target = urljoin(str(response.url), response.headers["location"])
+                    target = join_url(str(response.url), response.headers["location"]) or ""
                     if origin_of(target) != origin:
                         raise LmsError("The calendar link redirects to another site (maybe a login page).", _COPY_AGAIN)
                     url = target
@@ -73,8 +77,10 @@ def _read(response: Any, host: str, deadline: float) -> bytes:
 def _web_url(raw: str, feed_url: str) -> str | None:
     """일정의 URL 값: http(s)만(테스트용 loopback 밖에서는 https만), 500자까지."""
     raw = raw.strip()
-    parts = urlsplit(raw)
-    if parts.scheme == "https" and parts.hostname:
+    parts = split_url(raw)
+    if parts is None:
+        return None
+    if parts.scheme == "https" and host_of(raw):
         return raw[:500]
     if parts.scheme == "http" and origin_of(raw)[1] in LOOPBACK and origin_of(feed_url)[1] in LOOPBACK:
         return raw[:500]

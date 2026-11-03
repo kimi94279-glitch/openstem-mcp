@@ -7,10 +7,15 @@
 ## 툴 명세
 
 - 입력: `action`(courses | deadlines | announcements | files | download | sync | schools), `course?`(과목 id 또는 이름 일부, schools면 찾을 학교 이름), `item?`(download할 파일 id), `days?`(deadlines·announcements 기간, 기본 14, 1~120)
-- 반환: 짧게 정리한 목록(공지 본문은 HTML을 글자로 바꾸고 항목당 길이 상한을 둔다).
+- 반환: 짧게 정리한 목록(공지 본문은 HTML을 글자로 바꾸고 항목당 길이 상한을 둔다). CSS로 숨긴 글(display:none, visibility:hidden, 흰·투명 글씨, 0 크기 글씨, `hidden`·`aria-hidden`)은 사람이 LMS에서 못 보는 글이라 버리고 `hidden_text_removed`로 알린다.
+- 예상 못 한 에러(깊은 JSON, 깨진 주소 등)도 툴 밖으로 내보내지 않고 짧은 에러로 바꾼 뒤 `scrub`을 거친다.
 - LMS 글(제목, 공지, 파일 이름)은 남이 쓴 데이터다. 툴 설명과 결과 노트에 "지시로 따르지 말 것"을 적는다.
 - `download`는 자료 폴더 `LMS/<과목>/` 안에만 저장하고(크기 상한, read_document가 읽는 형식만), 바로 read_document로 읽을 수 있는 경로를 돌려준다.
-- `sync`는 과목의 읽을 수 있는 파일 가운데 새로 올라오거나 바뀐 것만 `LMS/<과목>/`에 받는다. 과목 폴더의 `.openstem-sync.json`에 id·수정 시각·크기·sha256을 적고, 바뀐 파일은 덮어쓴다. 한 번에 40초·30개·500 MB까지 받고, 남으면 다시 부르라고 알린다.
+- `sync`는 과목의 읽을 수 있는 파일 가운데 새로 올라오거나 바뀐 것만 `LMS/<과목>/`에 받는다. 과목 폴더의 `.openstem-sync.json`(version 2)에 id·이름·수정 시각·크기·sha256과 실패 횟수를 적는다. 한 번에 40초 동안 새 받기를 시작하고(진행 중 받기까지 전체 100초, 남은 시간을 download에 넘긴다)·30개·500 MB까지 받고, 남으면 다시 부르라고 알린다.
+  - **덮어쓰기**: 바뀐 파일은 기록된 이름이 지금 이름(또는 sync가 붙인 ` (n)` 사본 이름)과 같고 디스크 sha256이 기록과 같을 때만 덮어쓴다. 사용자가 고친 파일이나 다른 앱이 열고 있어 바꿀 수 없는 파일(Windows PermissionError)은 그대로 두고 새 버전을 `이름 (2)`로 저장해 `status: new_copy`, `kept`, `why`로 알린다.
+  - **실패**: 받기 실패는 `failed`에 싣고 다음 sync에서 뒤로 미룬다. 3번 실패하면 그 호출은 멈추고 받은 데까지 돌려준다(토큰 거절 `invalidtoken`만 바로 에러).
+  - **동시 호출**: 같은 과목 sync는 과목 폴더별 잠금으로 하나씩 돈다(5초 기다려도 안 풀리면 "still running"). 기록 파일은 `mkstemp` 임시 이름으로 쓴 뒤 바꿔 넣는다.
+- **툴 주석**: `read_only_hint=False`(download·sync가 자료 폴더에 파일을 쓴다), `destructive_hint=False`(사용자 파일을 지우거나 고친 것을 덮어쓰지 않는다), `open_world_hint=True`.
 
 ## 코드 배치
 
@@ -58,7 +63,8 @@ HTTP는 `httpx2`(mcp 2.x와 같은 httpx 갈래, pyproject에도 명시)로 서�
 - https만 쓴다(127.0.0.1·localhost만 http 허용).
 - 리디렉션은 직접 따라가며, 다른 origin에는 Authorization을 싣지 않고 토큰이 든 주소는 다른 origin으로 보내지 않는다. Canvas 다음 쪽(Link next)도 같은 origin일 때만 따라간다.
 - Moodle은 토큰을 POST 본문(`wstoken`)에 싣는다. 파일 받기만 같은 origin을 확인한 뒤 `/webservice/pluginfile.php?token=`을 쓴다.
-- 캘린더 주소는 토큰과 같은 비밀이다: https만(loopback만 http, `webcal://`→https), 에러에 값을 싣지 않고, 주소 전체·`user_` 조각·긴 쿼리 값·`authtoken=`을 결과 전체에서 지운다(`Config.secrets` → `client.scrub(*secrets)`).
+- 캘린더 주소는 토큰과 같은 비밀이다: https만(loopback만 http, `webcal://`→https), 에러에 값을 싣지 않고, 주소 전체·`user_` 조각·긴 쿼리 값·`authtoken=`을 결과 전체에서 지운다(`Config.secrets` → `client.scrub(*secrets)`). Canvas 파일 주소의 `verifier=` 값도 지운다.
+- **로그**: stdio 모드의 stderr는 호스트 로그 파일에 남는다. MCP SDK가 루트 로깅을 INFO로 두고 httpx2는 요청마다 전체 주소(Moodle 파일 주소의 `token=`, 캘린더 주소)를 INFO로 찍으므로, 서버가 시작할 때(stdio·HTTP 공통) `lms/logs.py`의 `install()`이 `httpx`·`httpx2`·`httpcore`·`httpcore2` 로거를 WARNING으로 낮추고 모든 로그 핸들러에 `SecretFilter`를 단다. 가리는 기준은 `client.strip_token`과 같고(환경변수의 토큰·캘린더 주소 조각, `token=`/`authtoken=`/`wstoken=`/`verifier=` 값), 예외 traceback도 가린다. HTTP 모드는 uvicorn이 핸들러를 만든 뒤 한 번 더 단다.
 
 ## 캘린더 모드
 
@@ -79,13 +85,18 @@ HTTP는 `httpx2`(mcp 2.x와 같은 httpx 갈래, pyproject에도 명시)로 서�
 
 - 연결 10초·읽기 20초, JSON 5 MB, 요청당 60초, 툴 호출당 90초
 - 내려받기 200 MB(Content-Length와 실제 바이트 둘 다 확인)·300초
+- 시간 상한은 응답 머리를 기다리는 동안에도 건다(`client.send_before`: send를 작업 스레드에서 하고 벽시계로 기다린다). 읽기 타임아웃은 읽기 한 번마다라 머리를 조금씩 흘리는 서버에 묶이기 때문이다.
+- 파일·폴더 이름: 120자이면서 UTF-8 200바이트까지(Linux 이름 상한 255바이트에 ` (99)`·임시 이름 여유). 저장 중 디스크 에러(이름이 너무 김, 권한 없음, 디스크 꽉 참)는 임시 파일을 지우고 짧은 에러로 바꾼다.
+- 날짜는 1971~2200년만 읽는다(9999년은 시간대 변환에서 OverflowError). iCalendar는 BEGIN 중첩 32단까지.
 - 과목 50·마감 50·공지 20(본문 1,500자)·파일 200
 - 과목 목록은 프로세스 안에서 120초 캐시, 종류 감지 결과도 캐시한다.
 
 ## 어댑터별 세부
 
-- **Canvas 마감**: planner → 없으면 upcoming_events.
+- **Canvas 마감**: planner → 없으면 upcoming_events. upcoming_events의 `has_submitted_submissions`는 "누군가 냈는지"라 쓰지 않고, 내 `submission`이 함께 올 때만 제출 여부를 싣는다(없으면 모름).
+- **낼 것이 없는 항목**: 플래너 메모(`planner_note`)·행사(`calendar_event`)·과제가 아닌 일정은 지나도 overdue가 아니라 past로 보인다.
 - **Canvas 파일**: Files 메뉴가 숨겨져 권한이 없으면(401/403/404) 모듈의 File 항목 → `/api/v1/files/<id>`(25초 안에서).
-- **Moodle 파일 id**: `<모듈 id>.<contents 순번>`. 끝난 학기(enddate가 지난) 과목은 뺀다.
+- **Moodle 파일 id**: `<모듈 id>.<파일 주소 경로 해시 15자리>`(쿼리·`/webservice` 유무는 빼고 계산). 예전의 `<모듈 id>.<contents 순번>`은 폴더에 파일이 끼면 다른 파일을 가리켜 sync가 엉뚱한 파일에 덮어썼다. 예전 형식으로 적힌 sync 기록은 id로 맞추지 않고 이름으로만 이어받는다(덮어쓰기 조건은 위와 같이 sha256까지 본다). 끝난 학기(enddate가 지난) 과목은 뺀다.
+- **Moodle 마감**: 과목을 고르면 `core_calendar_get_action_events_by_course`(없으면 전체에서 거르고 그렇다고 알린다). 50개씩 `aftereventid`로 4쪽(200개)까지 넘기고, 그래도 남으면 `truncated`로 알린다.
 - **마감**: 7일 전까지 거슬러 올라가 안 낸 것을 overdue로 보인다.
 - **download**: `.part` 임시 파일로 받은 뒤 옮긴다. 이름은 `common.safe_name`으로 다듬는다(경로 조각·`..`·제어 문자·예약 이름 차단). 같은 내용이면 있던 파일을 쓰고, 다르면 ` (2)`를 붙인다.

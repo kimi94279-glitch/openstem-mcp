@@ -172,8 +172,12 @@ def test_canvas_deadlines_course_filter(canvas):
 def test_canvas_deadlines_fallback_to_upcoming_events(canvas):
     canvas.planner = False
     data = ok("deadlines")
-    assert [d["title"] for d in data["deadlines"]] == ["학과 설명회", "중간 보고서"]
+    rows = {d["title"]: d for d in data["deadlines"]}
+    assert list(rows) == ["학과 설명회", "중간 보고서", "실험 예비 보고서", "실험 결과 보고서"]
     assert any(r.path == "/api/v1/users/self/upcoming_events" for r in canvas.requests)
+    # has_submitted_submissions는 "누군가 냈는지"라 내 제출로 보지 않는다. 내 submission이 있으면 그것으로 본다
+    assert "submitted" not in rows["실험 예비 보고서"] and "submitted" not in rows["중간 보고서"]
+    assert rows["실험 결과 보고서"]["submitted"] is True
 
 
 def test_canvas_announcements(canvas):
@@ -338,20 +342,23 @@ def test_moodle_files_and_download(moodle, storage, tmp_path):
     names = [f["name"] for f in data["files"]]
     assert "index.html" not in names
     assert names == ["lecture1.pdf", "data.csv", "tool.exe", "outside.pdf"]
+    ids = {f["name"]: f["id"] for f in data["files"]}
     csv = next(f for f in data["files"] if f["name"] == "data.csv")
-    assert csv["id"] == "202.0" and csv["folder"] == "1주차 / 실습 폴더 / lab"
+    assert csv["id"].startswith("202.") and csv["folder"] == "1주차 / 실습 폴더 / lab"
+    assert len(set(ids.values())) == len(ids)
     assert next(f for f in data["files"] if f["name"] == "tool.exe")["readable"] is False
 
-    got = ok("download", course="11", item="201.0")
+    got = ok("download", course="11", item=ids["lecture1.pdf"])
     assert got["path"] == "LMS/공업수학 1/lecture1.pdf"
     assert (materials(tmp_path) / got["path"]).read_bytes() == b"content of lecture1.pdf"
-    csv_got = ok("download", course="11", item="202.0")  # /pluginfile.php → /webservice/pluginfile.php
+    csv_got = ok("download", course="11", item=ids["data.csv"])  # /pluginfile.php → /webservice/pluginfile.php
     assert (materials(tmp_path) / csv_got["path"]).read_bytes() == b"content of data.csv"
     hits = [r for r in moodle.requests if r.path.startswith("/webservice/pluginfile.php/")]
     assert len(hits) == 2 and all(r.q("token") == FakeMoodle.TOKEN for r in hits)
 
-    assert ".exe" in fail("download", course="11", item="202.1")["errors"][0]
-    assert "another site" in fail("download", course="11", item="204.0")["errors"][0]
+    assert ".exe" in fail("download", course="11", item=ids["tool.exe"])["errors"][0]
+    assert "another site" in fail("download", course="11", item=ids["outside.pdf"])["errors"][0]
+    assert "No file with id" in fail("download", course="11", item="202.1")["errors"][0]  # 예전 순번 id
     assert not storage.requests
 
 
@@ -847,3 +854,364 @@ def test_ical_limits(monkeypatch):
     assert len(events) == 10 and truncated
     start = datetime(2026, 11, 6, tzinfo=timezone.utc)
     assert ical.parse(many, window=(start, start + timedelta(days=1)))[0] == []  # 기간 밖은 세지 않는다
+
+
+# ── 보안 감사(2026-11-03) 후속: 로그, 파일 id, sync 안전, 시간 상한, 이상한 응답 ──
+
+
+LOG_SCRIPT = r"""
+import json, logging, os, sys
+sys.path.insert(0, sys.argv[1])
+import openstem.server  # noqa: F401 — 실제 서버처럼 SDK가 루트 로깅(INFO, stderr)을 설정한다
+from fake_lms import FakeCanvas, FakeMoodle
+from openstem.tools import lms as lms_tool
+
+out = {}
+with FakeMoodle() as moodle, FakeCanvas() as canvas:
+    os.environ["OPENSTEM_LMS_URL"] = moodle.url
+    os.environ["OPENSTEM_LMS_TOKEN"] = FakeMoodle.TOKEN
+    files = lms_tool.lms("files", course="11").data["files"]
+    item = next(f["id"] for f in files if f["name"] == "lecture1.pdf")
+    out["download"] = lms_tool.lms("download", course="11", item=item).ok
+    # 다른 경로로 새는 것도 가린다(httpx 로거를 다시 INFO로 올리거나 다른 로거가 주소를 찍어도)
+    logging.getLogger("httpx2").setLevel(logging.INFO)
+    logging.getLogger("httpx2").info("HTTP Request: GET %s/webservice/pluginfile.php/1/x.pdf?token=%s",
+                                     moodle.url, FakeMoodle.TOKEN)
+    logging.getLogger("openstem.other").warning("canvas file %s/files/1/download?verifier=abcdef123", canvas.url)
+    try:
+        raise RuntimeError("boom " + FakeMoodle.TOKEN)
+    except RuntimeError:
+        logging.getLogger("openstem.other").exception("failed")
+    del os.environ["OPENSTEM_LMS_URL"], os.environ["OPENSTEM_LMS_TOKEN"]
+    os.environ["OPENSTEM_LMS_CALENDAR_URL"] = canvas.feed_url
+    out["calendar"] = lms_tool.lms("deadlines").ok
+    logging.getLogger("openstem.other").warning("feed %s", canvas.feed_url)
+print(json.dumps(out))
+"""
+
+
+def test_logs_never_carry_tokens_or_calendar_secrets(tmp_path):
+    """stdio 모드의 stderr(호스트 로그 파일)에 토큰·캘린더 주소·verifier가 남지 않는다."""
+    import os
+    import subprocess
+    import sys
+
+    script = tmp_path / "log_check.py"
+    script.write_text(LOG_SCRIPT, encoding="utf-8")
+    env = {k: v for k, v in os.environ.items() if not k.startswith("OPENSTEM_LMS_")}
+    env.update(OPENSTEM_INPUT_DIR=str(tmp_path / "materials"), OPENSTEM_OUTPUT_DIR=str(tmp_path / "out"),
+               COLUMNS="400", PYTHONIOENCODING="utf-8")
+    proc = subprocess.run([sys.executable, str(script), str(Path(__file__).parent)], capture_output=True, check=False,
+                          text=True, encoding="utf-8", env=env, timeout=120)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert json.loads(proc.stdout.strip().splitlines()[-1]) == {"download": True, "calendar": True}
+    flat = "".join(proc.stderr.split())  # rich가 긴 줄을 접어도 비밀 조각을 놓치지 않게
+    for secret in (FakeMoodle.TOKEN, FakeCanvas.FEED_KEY, "abcdef123"):
+        assert secret not in flat, proc.stderr
+    assert "/feeds/calendars/" not in flat
+    assert "boom" in flat and "***" in flat  # 가리기만 하고 로그는 남긴다
+    assert "lecture1.pdf?forcedownload" not in flat  # httpx 요청 로그 자체가 꺼져 있다
+
+
+def test_log_filter_unit(monkeypatch):
+    import logging
+
+    from openstem.lms import logs
+
+    monkeypatch.setenv("OPENSTEM_LMS_TOKEN", "unit-secret-token-1")
+    monkeypatch.setenv("OPENSTEM_LMS_CALENDAR_URL", "https://lms.example.ac.kr/feeds/calendars/user_AbCdEf0123456789.ics")
+    record = logging.LogRecord("x", logging.INFO, __file__, 1, "GET %s and %s", (
+        "https://h/f?verifier=v123456&x=1", "unit-secret-token-1 user_AbCdEf0123456789"), None)
+    assert logs.SecretFilter().filter(record)
+    text = record.getMessage()
+    assert "v123456" not in text and "unit-secret-token-1" not in text and "AbCdEf0123456789" not in text
+    logs.install()
+    assert logging.getLogger("httpx2").level >= logging.WARNING
+    assert logging.getLogger("httpcore2").level >= logging.WARNING
+
+
+def test_scrub_hides_canvas_verifier():
+    out = lms_client.scrub({"u": "https://c/files/1/download?download_frd=1&verifier=secretV1"})
+    assert "secretV1" not in json.dumps(out)
+
+
+def _moodle_folder_ids(names):
+    return {f["name"]: f["id"] for f in ok("files", course="11")["files"] if f["name"] in names}
+
+
+def test_moodle_file_ids_survive_a_file_inserted_in_a_folder(moodle, tmp_path):
+    """폴더 [a, b]에 a0이 끼어도 id가 그대로라 sync가 b.pdf에 a0 내용을 쓰지 않는다."""
+    folder = materials(tmp_path) / "LMS" / "공업수학 1"
+    moodle.folder_files = ["a.pdf", "b.pdf"]
+    moodle.content = {"a.pdf": b"%PDF a", "b.pdf": b"%PDF b", "a0.pdf": b"%PDF a0"}
+    before = _moodle_folder_ids({"a.pdf", "b.pdf"})
+    ok("sync", course="11")
+    moodle.folder_files = ["a0.pdf", "a.pdf", "b.pdf"]
+    after = _moodle_folder_ids({"a.pdf", "b.pdf"})
+    assert before == after
+    data = ok("sync", course="11")
+    assert [d["path"] for d in data["downloaded"]] == ["LMS/공업수학 1/a0.pdf"]
+    assert (folder / "a0.pdf").read_bytes() == b"%PDF a0"
+    assert (folder / "b.pdf").read_bytes() == b"%PDF b" and (folder / "a.pdf").read_bytes() == b"%PDF a"
+    assert ok("sync", course="11")["downloaded"] == []  # outside.pdf(다른 사이트 주소)만 늘 실패로 남는다
+
+
+def test_moodle_legacy_sync_state_matches_by_name_only(moodle, tmp_path):
+    """예전 id(<모듈>.<순번>) 기록: 순번이 밀려도 이름·sha256으로만 이어받는다."""
+    import hashlib
+
+    folder = materials(tmp_path) / "LMS" / "공업수학 1"
+    folder.mkdir(parents=True)
+    moodle.folder_files = ["a0.pdf", "a.pdf", "b.pdf"]
+    moodle.content = {"a.pdf": b"%PDF a", "b.pdf": b"%PDF b", "a0.pdf": b"%PDF a0"}
+    (folder / "a.pdf").write_bytes(b"%PDF a")
+    (folder / "b.pdf").write_bytes(b"%PDF b")
+    stamp = iso(datetime.fromtimestamp(int(moodle.anchor.timestamp()) - 2 * 86400, tz=timezone.utc))
+
+    def entry(name, body):
+        return {"name": name, "updated": stamp, "size": len(body), "sha256": hashlib.sha256(body).hexdigest()}
+
+    # 예전 순번: 폴더가 [a, b]일 때 202.0 = a, 202.1 = b. 지금은 [a0, a, b]라 순번으로 맞추면 b ← a0가 된다
+    (folder / ".openstem-sync.json").write_text(json.dumps({"version": 1, "files": {
+        "202.0": entry("a.pdf", b"%PDF a"), "202.1": entry("b.pdf", b"%PDF b")}}), encoding="utf-8")
+    data = ok("sync", course="11")
+    paths = [d["path"] for d in data["downloaded"]]
+    assert "LMS/공업수학 1/a0.pdf" in paths and "LMS/공업수학 1/b.pdf" not in paths
+    assert (folder / "b.pdf").read_bytes() == b"%PDF b" and (folder / "a0.pdf").read_bytes() == b"%PDF a0"
+    saved = json.loads((folder / ".openstem-sync.json").read_text(encoding="utf-8"))
+    assert saved["version"] == 2 and not any(k in saved["files"] for k in ("202.0", "202.1"))
+    assert not list(folder.glob("* (2).pdf"))
+
+
+def test_sync_keeps_a_file_the_user_edited(canvas, tmp_path):
+    folder = materials(tmp_path) / "LMS" / "일반물리학 1"
+    ok("sync", course="101")
+    (folder / "lecture1.pdf").write_bytes(b"%PDF-1.4 my notes")  # 사용자가 받은 파일에 필기했다
+    canvas.contents[9001] = b"%PDF-1.4 lecture one, revised"
+    canvas.modified[9001] = canvas.file_time + timedelta(hours=1)
+    data = ok("sync", course="101")
+    assert data["downloaded"] == [{"path": "LMS/일반물리학 1/lecture1 (2).pdf", "status": "new_copy",
+                                   "kept": "LMS/일반물리학 1/lecture1.pdf",
+                                   "why": "the earlier copy was changed on this computer, so it was kept"}]
+    assert "nothing was overwritten" in data["note"]
+    assert (folder / "lecture1.pdf").read_bytes() == b"%PDF-1.4 my notes"
+    assert (folder / "lecture1 (2).pdf").read_bytes() == b"%PDF-1.4 lecture one, revised"
+    assert ok("sync", course="101")["downloaded"] == []  # 다음 sync는 (2)를 받은 사본으로 안다
+    canvas.contents[9001] = b"%PDF-1.4 lecture one, v3"
+    canvas.modified[9001] = canvas.file_time + timedelta(hours=2)
+    data = ok("sync", course="101")
+    assert data["downloaded"] == [{"path": "LMS/일반물리학 1/lecture1 (2).pdf", "status": "updated"}]
+    assert (folder / "lecture1.pdf").read_bytes() == b"%PDF-1.4 my notes"
+
+
+def test_sync_file_open_in_another_app_is_kept(canvas, tmp_path, monkeypatch):
+    """Windows에서 열린 PDF를 바꾸면 PermissionError: sync 전체가 멈추지 않고 (2)로 저장한다."""
+    import os
+
+    folder = materials(tmp_path) / "LMS" / "일반물리학 1"
+    ok("sync", course="101")
+    canvas.contents[9001] = b"%PDF-1.4 lecture one, revised"
+    canvas.modified[9001] = canvas.file_time + timedelta(hours=1)
+    real = os.replace
+
+    def locked(src, dst):
+        if Path(dst).name == "lecture1.pdf":
+            raise PermissionError(13, "The process cannot access the file")
+        return real(src, dst)
+
+    monkeypatch.setattr(lms_tool.os, "replace", locked)
+    data = ok("sync", course="101")
+    assert data["downloaded"][0]["status"] == "new_copy" and "open in another app" in data["downloaded"][0]["why"]
+    assert (folder / "lecture1.pdf").read_bytes() == b"%PDF-1.4 lecture one"
+    assert (folder / "lecture1 (2).pdf").read_bytes() == b"%PDF-1.4 lecture one, revised"
+
+
+def test_sync_partial_result_and_failed_files_go_last(canvas, tmp_path):
+    canvas.extra_files = [(9050, "gone1.pdf"), (9100, "gone2.pdf"), (9150, "gone3.pdf")]  # 가장 최근, 받으면 404
+    first = ok("sync", course="101")
+    assert [f["name"] for f in first["failed"]] == ["gone1.pdf", "gone2.pdf", "gone3.pdf"]
+    assert first["downloaded"] == [] and first["remaining"] > 0 and "repeated download failures" in first["next"]
+    second = ok("sync", course="101")
+    assert "LMS/일반물리학 1/lecture1.pdf" in {d["path"] for d in second["downloaded"]}
+    assert "remaining" not in second and len(second["failed"]) == 3 and "retried last" in second["note"]
+
+
+def test_sync_same_course_at_once(canvas, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+
+    folder = materials(tmp_path) / "LMS" / "일반물리학 1"
+    with ThreadPoolExecutor(4) as pool:
+        results = list(pool.map(lambda _: lms_tool.lms("sync", course="101"), range(4)))
+    assert all(r.ok for r in results), [r.data for r in results]
+    assert not list(folder.glob("* (2).*")) and not list(folder.glob("*.part")) and not list(folder.glob(".*.part"))
+    state = json.loads((folder / ".openstem-sync.json").read_text(encoding="utf-8"))
+    assert "9001" in state["files"]
+
+
+def test_sync_lock_busy(canvas, monkeypatch):
+    monkeypatch.setattr(lms_tool, "SYNC_LOCK_WAIT", 0.01)
+    ok("files", course="101")
+    _root, folder = lms_tool._course_folder({"id": 101, "name": "일반물리학 1"})
+    lock = lms_tool._sync_lock(folder)
+    with lock:
+        data = fail("sync", course="101")
+    assert "still running" in data["errors"][0]
+
+
+def test_sync_passes_remaining_time_to_downloads(canvas, monkeypatch):
+    import time
+
+    canvas.download_delay = 3.0
+    monkeypatch.setattr(lms_tool, "SYNC_DEADLINE", 0.5)
+    monkeypatch.setattr(lms_tool, "SYNC_MAX_ERRORS", 1)
+    started = time.monotonic()
+    data = ok("sync", course="101")
+    assert time.monotonic() - started < 2.5
+    assert "took over" in data["failed"][0]["error"]
+
+
+def test_slow_response_headers_are_cut_off(canvas, monkeypatch):
+    import time
+
+    canvas.header_delay = 3.0
+    monkeypatch.setattr(lms_client, "JSON_DEADLINE", 0.5)
+    started = time.monotonic()
+    assert "too slowly" in fail("courses")["errors"][0]
+    assert time.monotonic() - started < 2.5
+
+
+def test_slow_calendar_headers_are_cut_off(canvas, monkeypatch):
+    import time
+
+    from openstem.lms import feed
+
+    monkeypatch.delenv("OPENSTEM_LMS_TOKEN")
+    monkeypatch.delenv("OPENSTEM_LMS_URL")
+    monkeypatch.setenv("OPENSTEM_LMS_CALENDAR_URL", canvas.feed_url)
+    canvas.header_delay = 3.0
+    monkeypatch.setattr(feed, "FEED_DEADLINE", 0.5)
+    started = time.monotonic()
+    assert "too slowly" in fail("deadlines")["errors"][0]
+    assert time.monotonic() - started < 2.5
+
+
+def test_long_korean_file_name_is_cut_by_bytes(canvas, tmp_path):
+    name = "아주 긴 강의 자료 이름 " * 20 + ".pdf"
+    canvas.extra_files = [(9060, name)]
+    canvas.contents[9060] = b"%PDF long"
+    got = ok("download", course="101", item="9060")
+    saved = materials(tmp_path) / got["path"]
+    assert saved.read_bytes() == b"%PDF long" and saved.suffix == ".pdf"
+    assert len(saved.name.encode("utf-8")) <= 200
+
+
+def test_disk_error_while_saving_is_a_short_error(canvas, tmp_path, monkeypatch):
+    from openstem.lms import common
+
+    monkeypatch.setattr(common, "NAME_LIMIT", 10_000)
+    monkeypatch.setattr(common, "NAME_BYTES", 10_000)
+    canvas.extra_files = [(9060, "가" * 150 + ".pdf")]  # 450바이트: Linux·Windows 모두 너무 긴 이름
+    canvas.contents[9060] = b"%PDF long"
+    data = fail("download", course="101", item="9060")
+    assert "Could not save" in data["errors"][0] and "too long" in data["hint"]
+    folder = materials(tmp_path) / "LMS" / "일반물리학 1"
+    assert not list(folder.glob("*.part")) and not list(folder.glob(".*.part"))
+
+
+def test_unexpected_errors_are_short_and_scrubbed(canvas, monkeypatch):
+    def boom(*_args, **_kwargs):
+        raise RecursionError(f"deep {FakeCanvas.TOKEN}")
+
+    monkeypatch.setattr(lms_tool.canvas.Canvas, "courses", boom)
+    data = fail("courses")
+    assert "could not handle" in data["errors"][0] and "RecursionError" in data["errors"][0]
+
+
+def test_broken_urls_and_far_dates_do_not_crash(canvas):
+    canvas.broken_file_url = True
+    assert "broken" in fail("download", course="101", item="9001")["errors"][0]
+    assert lms_client.origin_of("https://[x/") == ("", "", 0)
+    assert lms_client.join_url("http://127.0.0.1/", "https://[x/") is None
+    canvas.broken_file_url = False
+    canvas.extra_planner = [{"plannable_type": "assignment", "course_id": 101, "context_name": "일반물리학 1",
+                             "plannable_date": "9999-12-31T23:59:59Z",
+                             "plannable": {"title": "먼 미래", "due_at": "9999-12-31T23:59:59Z"},
+                             "submissions": False, "html_url": "https://[x/"}]
+    data = ok("deadlines")
+    assert "먼 미래" not in [d["title"] for d in data["deadlines"]]
+
+
+def test_deeply_nested_json_is_not_a_crash(moodle):
+    moodle.deep_json = True
+    data = fail("courses")
+    assert data["errors"]
+
+
+def test_past_events_and_notes_are_past_not_overdue(canvas):
+    now = datetime.now(timezone.utc)
+
+    def item(kind, title):
+        return {"plannable_type": kind, "course_id": 101, "context_name": "일반물리학 1",
+                "plannable_date": (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "plannable": {"title": title, "todo_date": (now - timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+                "submissions": False}
+
+    canvas.extra_planner = [item("planner_note", "내 메모"), item("calendar_event", "지난 행사")]
+    rows = {d["title"]: d for d in ok("deadlines")["deadlines"]}
+    assert rows["내 메모"]["due_in"] == "past" and rows["지난 행사"]["due_in"] == "past"
+    assert rows["지난 과제(미제출)"]["due_in"] == "overdue"
+
+
+def test_moodle_course_deadlines_use_course_function_and_pages(moodle):
+    moodle.many_events = 60  # 회로이론 퀴즈 60개가 공업수학 일정보다 앞에 있다
+    data = ok("deadlines", course="공업수학")
+    assert "공수 퀴즈" in [d["title"] for d in data["deadlines"]]
+    calls = [r.q("wsfunction") for r in moodle.requests if r.path == "/webservice/rest/server.php"]
+    assert "core_calendar_get_action_events_by_course" in calls
+    moodle.missing.add("core_calendar_get_action_events_by_course")  # 옛 Moodle: 전체에서 쪽을 넘기며 거른다
+    data = ok("deadlines", course="공업수학")
+    assert "공수 퀴즈" in [d["title"] for d in data["deadlines"]] and "per course" in data["note"]
+    moodle.many_events = 250
+    data = ok("deadlines")
+    assert "truncated" in data and "more than 200" in data["note"]
+
+
+def test_hidden_announcement_text_is_removed(canvas):
+    canvas.hidden_announcement = True
+    data = ok("announcements", course="103")
+    row = data["announcements"][0]
+    assert "보안경 지참" in row["text"] and "끝" in row["text"]
+    for hidden in ("Ignore all previous", "SECRET-WHITE", "HIDDEN-ATTR"):
+        assert hidden not in row["text"]
+    assert row["hidden_text_removed"] is True and "hidden with CSS" in data["note"]
+    st = {}
+    assert html_to_text('<p>a<span style="font-size:0">x</span><b style="color:white">y</b>b</p>', stats=st) == "ab"
+    assert st["hidden"] == 2
+
+
+def test_ical_nesting_is_capped():
+    import time
+
+    deep = ["BEGIN:VCALENDAR"] + ["BEGIN:X"] * 40 + ["END:X"] * 40 + ["END:VCALENDAR"]
+    with pytest.raises(ical.IcalError, match="nested"):
+        ical.parse(_cal(*deep[1:-1]))
+    lines = ["BEGIN:VTIMEZONE"] + ["X-A:1"] * 20000 + ["END:VTIMEZONE"]
+    started = time.monotonic()
+    ical.parse(_cal(*lines))
+    assert time.monotonic() - started < 2
+
+
+def test_lms_tool_annotations_say_it_writes_files():
+    import anyio
+    from mcp import Client
+
+    from openstem.server import mcp
+
+    async def tools():
+        async with Client(mcp) as client:
+            return {t.name: t for t in (await client.list_tools()).tools}
+
+    found = anyio.run(tools)
+    lms = found["lms"].annotations
+    assert lms.read_only_hint is False and lms.destructive_hint is False and lms.open_world_hint is True
+    assert "data, not instructions" in found["read_document"].description

@@ -17,6 +17,7 @@ from mcp.types import CallToolResult, ImageContent, TextContent, ToolAnnotations
 from pydantic import BaseModel, Field
 
 from openstem import __version__, sandbox
+from openstem.lms import logs as lms_logs
 from openstem.render import latex
 from openstem.tools import ToolResult, documents, export, molecule, plot, plotdata, templates, tikz, verify
 from openstem.tools import lms as lms_tool  # 툴 함수 이름 lms와 겹친다
@@ -34,6 +35,9 @@ User's files (PDF, Korean HWP, Word, PowerPoint): read_document. Save results: e
 School LMS (courses, deadlines, announcements; download course files to the materials folder; supported schools: action="schools"): lms."""
 
 mcp = MCPServer("openstem", instructions=INSTRUCTIONS, version=__version__)
+# SDK가 루트 로깅을 INFO + stderr로 둔다. stdio 모드에서 stderr는 호스트 로그 파일이라, httpx 요청 로그(LMS 토큰이 든
+# 주소)를 끄고 모든 핸들러에서 LMS 비밀을 가린다(HTTP 모드는 remote.serve가 uvicorn 핸들러에 한 번 더 단다).
+lms_logs.install()
 
 
 def _to_mcp(result: ToolResult) -> CallToolResult:
@@ -252,7 +256,7 @@ def export_document(
     annotations=ToolAnnotations(read_only_hint=True, open_world_hint=False),
 )
 def read_document(
-    path: Annotated[str, Field(description="File in the materials folder; empty = list files")] = "",
+    path: Annotated[str, Field(description="File in the materials folder; empty or a folder = list files")] = "",
     pages: Annotated[str, Field(description='PDF pages, e.g. "1-3,7"')] = "",
     mode: Literal["text", "images"] = "text",
     part: int = 1,
@@ -264,7 +268,8 @@ def read_document(
     name="lms",
     title="학교 LMS 읽기",
     description=lms_tool.DESCRIPTION,
-    annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True),
+    # LMS는 읽기만 하지만 download·sync는 자료 폴더에 파일을 쓴다. 사용자 파일을 지우거나 덮어쓰지 않으므로 destructive는 아니다.
+    annotations=ToolAnnotations(read_only_hint=False, destructive_hint=False, open_world_hint=True),
 )
 def lms(
     action: Literal["courses", "deadlines", "announcements", "files", "download", "sync", "schools"],

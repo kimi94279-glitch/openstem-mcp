@@ -37,6 +37,7 @@ from starlette.responses import PlainTextResponse, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 
 from openstem import __version__
+from openstem.lms import logs as lms_logs
 from openstem.output import env_value, output_dir
 
 if TYPE_CHECKING:
@@ -282,6 +283,7 @@ def make_uvicorn(app: ASGIApp, secret: str, on_exit: Callable[[], None] | None =
         timeout_graceful_shutdown=5,  # Ctrl+C 때 오래 걸리는 툴 호출을 끝없이 기다리지 않게
     )
     install_redaction(secret)  # uvicorn.Config가 로그 핸들러를 만든 뒤
+    lms_logs.install()  # 같은 때 LMS 토큰·캘린더 주소 가리기도 uvicorn 핸들러에 단다
     return _Server(config)
 
 
