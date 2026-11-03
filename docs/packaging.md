@@ -1,0 +1,69 @@
+# 배포와 설치 묶음
+
+openstem-mcp가 사용자에게 가는 길, 릴리스 절차, 버전을 올릴 때 함께 고칠 곳을 정리한다.
+
+## 배포 경로
+
+1. **PyPI** — `uvx openstem-mcp`. Claude Code(`claude mcp add openstem -- uvx openstem-mcp`)와 설정 파일 방식이 쓴다.
+2. **GitHub 릴리스의 `.mcpb`** — Claude Desktop 원클릭 설치.
+3. **공식 MCP 레지스트리** — `io.github.kimi94279-glitch/openstem-mcp`(`server.json`). PyPI 소유 확인은 README 첫머리의 `<!-- mcp-name: … -->` 주석으로 한다.
+4. **Claude 플러그인** — `claude-plugin/`. 저장소 루트의 `.claude-plugin/marketplace.json`으로 `/plugin install openstem --marketplace kimi94279-glitch/openstem-mcp`. Anthropic 디렉터리에는 developer portal에 "Plugin bundle"로 제출한다(2026-11 기준 디렉터리는 로컬 서버 `.mcpb` 확장을 더는 받지 않고 플러그인으로만 받는다).
+
+로컬 MCP 서버는 Claude Code와 내 PC에서 도는 Cowork에서만 뜨고, claude.ai 채팅에서는 플러그인의 스킬만 실린다(채팅은 `.mcpb`를 쓴다).
+
+## 릴리스 절차
+
+GitHub에서 릴리스를 만들면 `.github/workflows/publish.yml`이 다음 순서로 돈다.
+
+1. **publish**: `uv build` → `uv publish --trusted-publishing always`(PyPI 신뢰할 수 있는 게시, 토큰 없음). PyPI 쪽 설정(pending publisher)은 관리자가 pypi.org에서 한 번 한다: 프로젝트 `openstem-mcp`, 워크플로 `publish.yml`, 환경 `pypi`.
+2. **bundle**: `scripts/build_mcpb.py`로 `.mcpb`를 묶어 릴리스에 붙인다.
+3. **registry**: 릴리스에 붙은 `.mcpb`의 sha256을 `server.json`에 채우고, PyPI가 새 버전을 내줄 때까지 기다린 뒤 `mcp-publisher login github-oidc` → `publish`.
+
+wheel에 templates·prompts·workers가 다 들어가는지, `uvx --from <wheel> openstem-mcp`로 새 환경에서 띄워 툴이 모두 되는지 확인한다.
+
+## 버전 올리기
+
+버전의 원본은 `src/openstem/__init__.py`의 `__version__` 하나다. 다음을 함께 고친다(`tests/test_plugin.py`가 확인한다).
+
+- `src/openstem/__init__.py`
+- `claude-plugin/.claude-plugin/plugin.json`의 `version`
+- `claude-plugin/.mcp.json`의 `openstem-mcp==<버전>`(디렉터리는 고정 버전 launcher만 받는다)
+- `server.json`의 `version`·`packages`
+- `CHANGELOG.md`에 새 버전 항목
+
+## 원클릭 설치 묶음(.mcpb)
+
+- `scripts/build_mcpb.py` → `dist/openstem-<버전>.mcpb`.
+- `packaging/mcpb/manifest.template.json`에 버전(`__init__.py`)·저자·라이선스·주소·requires-python(pyproject)을 채우고, 저장소와 같은 배치(pyproject·uv.lock·README·LICENSE·src/openstem·templates + launch.py·icon.png)로 모아 공식 CLI(`npx -y @anthropic-ai/mcpb validate`·`pack`)로 묶는다. `--zip`이면 공식 CLI 없이 zipfile로 같은 배치를 만든다.
+- manifest 0.4의 `server.type: "uv"`(의존성은 pyproject로 호스트가 설치하고, 묶음에는 소스만 넣는다). 명령은 `uv run --directory ${__dirname} --frozen --no-dev --extra latex launch.py`(묶은 uv.lock 그대로, dev 그룹 제외, LaTeX 수식 입력 켬). `--frozen`이라 빌드 전에 `uv lock --check`로 lock이 최신인지 막는다.
+- uv가 확장 폴더에 `.venv`를 만들고 프로젝트를 편집 설치하므로 템플릿은 루트 `templates/`에서 찾는다.
+- user_config: 결과물 폴더(기본 `${DOCUMENTS}/OpenSTEM`), 자료 폴더, 학교 이름, LMS 토큰·캘린더 주소(둘 다 sensitive), LMS 주소 직접 지정. 각각 env `OPENSTEM_OUTPUT_DIR`·`INPUT_DIR`·`LMS_SCHOOL`·`LMS_TOKEN`·`LMS_CALENDAR_URL`·`LMS_URL`로 간다. 비워 둔 설정은 빈 값이나 `${user_config.x}` 글자 그대로 올 수 있어 `output.env_value()`가 둘 다 "설정 안 함"으로 본다.
+- 아이콘은 `build_mcpb.py --icon`이 matplotlib으로 그린다(512×512).
+- 툴을 추가하면 manifest 템플릿 `tools`에도 넣는다(`tests/test_mcpb.py`가 확인).
+- 묶음을 새 폴더에 풀어 manifest 명령 그대로 띄우는 시험은 `OPENSTEM_SLOW_TESTS=1`일 때 돈다.
+- 첫 실행 때 서버가 tectonic과 TeX 번들을 백그라운드로 준비한다.
+
+## tectonic 자동 준비
+
+배경은 [결정 0005](decisions/0005-tectonic-auto-install.md). 코드는 `render/tectonic_setup.py`.
+
+- 찾는 순서: `OPENSTEM_TECTONIC` → PATH → 캐시 폴더 `bin/`(`latex.tectonic_bin_dir()`).
+- 없으면 tectonic 0.17.0 공식 릴리스를 OS·CPU에 맞게 받는다: Windows x86_64 msvc zip, macOS arm64·x86_64, Linux x86_64·aarch64 musl tar.gz. 버전·파일 이름·크기·SHA-256을 코드에 고정했다. 해시는 GitHub 릴리스 API의 digest다(버전을 올릴 때 `gh api …/releases/tags/tectonic@<버전>`으로 다시 받는다).
+- 캐시 폴더 안 임시 파일로 받는다: 60 MB 상한, https 리디렉션만, 전체 5분.
+- 해시가 맞아야 압축을 연다. 절대 경로·드라이브 문자·`..` 이름이 하나라도 있으면 거절하고, 실행 파일 하나(일반 파일)만 꺼내 `--version`으로 실행되는지 본 뒤 원자적으로 이름을 바꾼다.
+- 스레드 잠금 + 파일 잠금(msvcrt/fcntl)으로 서버 여러 개·`--warmup`이 동시에 받지 않는다.
+- `OPENSTEM_NO_DOWNLOAD=1`이거나 릴리스가 없는 OS·CPU(Windows ARM 등)면 받지 않고 설치 안내를 돌려준다.
+- 서버 시작 때 `BACKGROUND_WARMUP`이 tectonic → TeX 번들 순서로 준비한다(그동안 툴은 "준비 중"). `--warmup`도 먼저 받는다. 자동 설치가 실패하면(네트워크가 늦게 붙는 경우 등) 30초 뒤 렌더링 요청이 올 때 다시 건다.
+- 진행 글은 stderr에 UTF-8로 쓴다(한국어 Windows의 파이프는 cp949라 호스트 로그가 깨졌다).
+- Windows msvc 빌드는 CRT 정적 링크라 VC 런타임이 필요 없다(가져오는 DLL을 확인했다).
+- 실제 다운로드 시험은 `OPENSTEM_NETWORK_TESTS=1`일 때 돈다.
+
+## HTTP 모드(ChatGPT 등)
+
+`openstem-mcp --http [--port 8765]`는 127.0.0.1에서 streamable HTTP로 연다. 주소에 추측할 수 없는 비밀 키가 들어가고(설정 폴더에 저장, `--new-secret`으로 교체) 키가 틀리면 404다. `--tunnel`은 설치된 `cloudflared`로 임시 HTTPS 주소를 열어 ChatGPT에 붙일 전체 URL을 출력한다(cloudflared는 내려받지 않고 설치 방법만 안내한다). 구조는 [ARCHITECTURE.md](ARCHITECTURE.md#http-모드).
+
+## 아직 확인하지 못한 것
+
+- 실제 Claude Desktop에서 `.mcpb` 더블클릭 설치(호스트가 uv를 주는지, 첫 설치 약 200 MB가 서버 시작 시간 제한 안에 끝나는지)
+- macOS와 Linux aarch64에서 자동 설치한 tectonic 실행(Linux x86_64는 2026-11-03에 설치·해시 확인·실행을 확인했다)
+- 실제 ChatGPT·cloudflared 연결

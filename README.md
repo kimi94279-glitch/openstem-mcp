@@ -195,7 +195,7 @@ AI에게 "LMS 지원 학교 목록 보여 줘"라고 하면 목록과 학교별 
 - **LaTeX로 쓴 식을 검산하고 싶다** — `verify_math`의 `latex=true`는 선택 기능이다. 위 설정 예시처럼 `openstem-mcp[latex]`로 실행하면 켜진다. 없어도 AI가 sympy 문법으로 바꿔 보낸다.
 - **물리 공식 검산이 "틀림"으로 나온다** — 변수를 음수일 수도 있는 실수로 보면 `√(m²v²) = mv` 같은 변형이 틀린 게 맞다. 물리량은 AI가 `assume="positive"`로 검산하게 되어 있다.
 - **설치가 안 되는 컴퓨터** — Windows ARM(Snapdragon 등)은 pandoc 패키지가 없어 지원하지 않는다.
-- **안전한가** — 임의 코드를 실행하는 툴은 없다. LaTeX·수식·SMILES는 별도 프로세스에서 시간 제한을 두고 처리하고, 파일을 읽거나 쓰는 TeX 명령(이름을 조립해 우회하는 방법 포함)과 결과물 폴더 밖·인터넷 그림은 컴파일 전에 막는다.
+- **안전한가** — 임의 코드를 실행하는 툴은 없다. LaTeX·수식·SMILES는 별도 프로세스에서 시간 제한을 두고 처리하고, 파일을 읽거나 쓰는 TeX 명령과 결과물 폴더 밖·인터넷 그림은 컴파일 전에 검사해 막는다. 다만 운영체제 수준의 격리(샌드박스)는 아직 없다. 지키는 범위, 알려진 한계, 취약점을 알리는 방법은 [SECURITY.md](SECURITY.md)에 있다.
 
 ## 개인정보
 
@@ -214,7 +214,16 @@ npx @modelcontextprotocol/inspector uv run openstem-mcp
 
 Claude Desktop에 개발 버전을 붙이려면(Windows): Claude Desktop을 완전히 종료 → `python scripts/register_claude_desktop.py` → 다시 켜기.
 
-설계 원칙과 구현 메모는 [CLAUDE.md](CLAUDE.md)에 있다.
+| 문서 | 내용 |
+|---|---|
+| [CONTRIBUTING.md](CONTRIBUTING.md) | 개발 환경, 시험, 기여 규칙 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | 구조와 설계 원칙 |
+| [docs/tools.md](docs/tools.md) | 툴·프롬프트·리소스 명세 |
+| [docs/lms.md](docs/lms.md) | 학교 LMS 연결 |
+| [docs/packaging.md](docs/packaging.md) | 배포·릴리스·설치 묶음 |
+| [docs/decisions/](docs/decisions/) | 설계 결정 기록 |
+| [SECURITY.md](SECURITY.md) | 보안 범위·한계·취약점 알리기 |
+| [CHANGELOG.md](CHANGELOG.md) | 변경 이력 |
 
 ## 라이선스
 
