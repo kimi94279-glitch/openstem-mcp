@@ -8,8 +8,10 @@
 - 리디렉션은 httpx에 맡기지 않고 직접 따라간다. 다른 origin으로 넘어가는 요청에는 Authorization 헤더를
   싣지 않고, 주소에 토큰이 든 채로 다른 origin으로 가려 하면 거절한다.
 - JSON 응답은 5 MB, 내려받기는 호출한 쪽이 정한 크기까지만 읽는다. 연결 10초·읽기 20초 타임아웃에 더해
-  요청 하나에 전체 시간 상한을 둬서 조금씩 흘려 보내는 서버에도 멈추지 않는다.
+  요청 하나에 전체 시간 상한을 둬서 조금씩 흘려 보내는 서버에도 멈추지 않는다. 응답 머리를 기다리는 동안(send)도
+  벽시계 감시(send_before)로 묶는다: 시간이 다 되면 연결을 닫아 send를 끝낸다.
 - 에러 글에 토큰이 들어가지 않게 httpx 예외 글을 그대로 쓰지 않는다(호스트 이름만).
+- 이상한 주소(https://[x/ 처럼 urlsplit가 ValueError를 내는 것)는 도우미가 None·빈 origin으로 받는다.
 """
 
 from __future__ import annotations
@@ -19,6 +21,7 @@ import json
 import os
 import re
 import tempfile
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -118,7 +121,7 @@ def canvas_guess(host: str) -> str | None:
 
 def portal_error(url: str) -> LmsError:
     """HTTP 419(Laravel "Page Expired")를 준 주소: LearningX 앞단 포털일 가능성이 크다."""
-    host = urlsplit(url).hostname or "the LMS"
+    host = host_of(url, "the LMS")
     guess = canvas_guess(host)
     return LmsError(
         f"{host} answered HTTP 419 (Page Expired): this looks like a LearningX portal page, not the LMS API.",
@@ -130,7 +133,7 @@ def portal_error(url: str) -> LmsError:
 
 def not_api_error(url: str) -> LmsError:
     """API 주소가 JSON 대신 웹 쪽(HTML)을 준 경우: 대개 포털이나 로그인 화면 주소를 넣었다."""
-    host = urlsplit(url).hostname or "the LMS"
+    host = host_of(url, "the LMS")
     guess = canvas_guess(host)
     return LmsError(
         f"{host} answered with a web page, not LMS API data.",
@@ -194,7 +197,7 @@ class Config:
 
     @property
     def host(self) -> str:
-        return urlsplit(self.base).hostname or ""
+        return host_of(self.base)
 
     @property
     def cache_key(self) -> tuple[str, str]:
@@ -217,14 +220,45 @@ def _host_key(host: str) -> str:
         return host
 
 
+def split_url(url: str) -> Any:
+    """urlsplit인데 이상한 주소(ValueError: 닫히지 않은 [ 등)면 None."""
+    try:
+        return urlsplit(url)
+    except ValueError:
+        return None
+
+
+def host_of(url: str, default: str = "") -> str:
+    parts = split_url(url)
+    try:
+        return (parts.hostname if parts else None) or default
+    except ValueError:
+        return default
+
+
+def join_url(base: str, ref: str) -> str | None:
+    """urljoin인데 이상한 주소면 None."""
+    try:
+        joined = urljoin(base, ref)
+    except ValueError:
+        return None
+    return joined if split_url(joined) is not None else None
+
+
 def origin_of(url: str) -> tuple[str, str, int]:
-    parts = urlsplit(url)
+    parts = split_url(url)
+    if parts is None:
+        return "", "", 0  # 어느 origin과도 같지 않다
     scheme = parts.scheme.lower()
     try:
         port = parts.port
     except ValueError:
         port = None
-    return scheme, _host_key(parts.hostname or ""), port or (443 if scheme == "https" else 80)
+    try:
+        host = parts.hostname or ""
+    except ValueError:
+        return "", "", 0
+    return scheme, _host_key(host), port or (443 if scheme == "https" else 80)
 
 
 def normalize_url(raw: str) -> str:
@@ -232,7 +266,9 @@ def normalize_url(raw: str) -> str:
     raw = raw.strip()
     if "://" not in raw:
         raw = "https://" + raw
-    parts = urlsplit(raw)
+    parts = split_url(raw)
+    if parts is None:
+        raise LmsError(f"OPENSTEM_LMS_URL is not a web address: {raw[:100]}", HOW_TO_CONNECT)
     scheme = parts.scheme.lower()
     if parts.username or parts.password:
         raise LmsError("OPENSTEM_LMS_URL must not contain a user name or password.", HOW_TO_CONNECT)
@@ -268,7 +304,9 @@ def normalize_calendar(raw: str) -> str:
         raw = "https://" + raw
     if len(raw) > MAX_CALENDAR_URL:
         raise LmsError(f"{CALENDAR_ENV} is too long to be a calendar link. Copy it again.")
-    parts = urlsplit(raw)
+    parts = split_url(raw)
+    if parts is None:
+        raise LmsError(f"{CALENDAR_ENV} is not a valid calendar link. Copy it again from the LMS calendar.")
     scheme = parts.scheme.lower()
     host = parts.hostname or ""
     if parts.username or parts.password or not host or any(ch.isspace() for ch in raw):
@@ -287,7 +325,9 @@ def calendar_secrets(url: str) -> list[str]:
     if not url:
         return []
     out = [url]
-    parts = urlsplit(url)
+    parts = split_url(url)
+    if parts is None:
+        return [x for x in out if len(x) >= 8]
     last = parts.path.rsplit("/", 1)[-1]
     if len(last) >= 12:
         out += [last, re.sub(r"\.ics$", "", last, flags=re.IGNORECASE)]
@@ -352,11 +392,11 @@ def load_config() -> Config:
     return Config(base=base, token=token if base else "", kind=kind, calendar=calendar, school=school)
 
 
-_TOKEN_PARAM = re.compile(r"((?:[?&]|&amp;)(?:ws|access_|auth)?token=)[^&#\s\"'<>]*", re.IGNORECASE)
+_TOKEN_PARAM = re.compile(r"((?:[?&]|&amp;)(?:(?:ws|access_|auth)?token|verifier)=)[^&#\s\"'<>]*", re.IGNORECASE)
 
 
 def strip_token(text: str, *secrets: str | None) -> str:
-    """글·주소에서 토큰·비밀을 지운다(Moodle 파일 주소의 token=, 캘린더 주소의 authtoken= 포함)."""
+    """글·주소에서 토큰·비밀을 지운다(Moodle 파일 주소의 token=, 캘린더 주소의 authtoken=, Canvas verifier= 포함)."""
     for secret in sorted((x for x in secrets if x and len(x) >= 4), key=len, reverse=True):
         text = text.replace(secret, "***")
     return _TOKEN_PARAM.sub(r"\1***", text)
@@ -371,6 +411,50 @@ def scrub(value: Any, *secrets: str | None) -> Any:
     if isinstance(value, (list, tuple)):
         return [scrub(v, *secrets) for v in value]
     return value
+
+
+class TooSlow(Exception):
+    """send_before가 시간이 다 되어 연결을 닫았다."""
+
+
+def send_before(client: Any, request: Any, deadline: float) -> Any:
+    """client.send(stream=True)를 벽시계 deadline까지만 기다린다.
+
+    httpx의 읽기 타임아웃은 읽기 한 번마다라서 응답 머리를 한 글자씩 흘려 보내는 서버에는 끝없이 묶인다.
+    send는 작업 스레드에서 하고, 시간이 다 되면 기다리기를 그만두고 TooSlow를 낸다. 늦게 온 응답은 그 스레드가 닫는다
+    (그 스레드도 읽기 타임아웃 20초나 Http가 client를 닫을 때 끝난다).
+    """
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise TooSlow
+    box: dict[str, Any] = {}
+    done = threading.Event()
+    guard = threading.Lock()
+
+    def work() -> None:
+        try:
+            response = client.send(request, stream=True)
+        except BaseException as exc:  # noqa: BLE001 — 부른 쪽 스레드에서 다시 낸다
+            box["error"] = exc
+            done.set()
+            return
+        with guard:
+            if box.get("abandoned"):
+                response.close()
+                return
+            box["response"] = response
+        done.set()
+
+    threading.Thread(target=work, name="openstem-lms-send", daemon=True).start()
+    if not done.wait(remaining):
+        with guard:
+            if "response" not in box:
+                box["abandoned"] = True
+        if box.get("abandoned"):
+            raise TooSlow
+    if "error" in box:
+        raise box["error"]
+    return box["response"]
 
 
 @dataclass
@@ -435,7 +519,7 @@ class Http:
         return headers
 
     def _network_error(self, exc: Exception, url: str) -> LmsError:
-        host = urlsplit(url).hostname or self.config.host
+        host = host_of(url, self.config.host)
         if isinstance(exc, httpx.TimeoutException):
             return LmsError(f"{host} did not answer in time (connect 10 s, read 20 s). Try again later.")
         if isinstance(exc, httpx.ConnectError):
@@ -461,22 +545,24 @@ class Http:
                                "Try again later, or pass course to ask for less.")
             if not self.same_origin(url):
                 raise LmsError(
-                    f"The LMS sent a request to another site ({urlsplit(url).hostname}); refused to send the token there.",
+                    f"The LMS sent a request to another site ({host_of(url, 'unknown')}); refused to send the token there.",
                     f"If the school moved its LMS, set {URL_ENV} to the new address.",
                 )
             request = self.client.build_request(
                 method, url, params=params, data=data, headers=self._headers(url, auth)
             )
             try:
-                response = self.client.send(request, stream=True)
+                response = send_before(self.client, request, deadline)
+            except TooSlow:
+                raise LmsError(f"{self.config.host} is answering too slowly. Try again later.") from None
             except httpx.HTTPError as exc:
                 raise self._network_error(exc, url) from None
             try:
                 if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
-                    target = urljoin(str(response.url), response.headers["location"])
+                    target = join_url(str(response.url), response.headers["location"]) or ""
                     if method != "GET" or not self.same_origin(target):
                         raise LmsError(
-                            f"The LMS address redirects to {urlsplit(target).hostname or 'another page'} "
+                            f"The LMS address redirects to {host_of(target, 'another page')} "
                             "(maybe a login page). The token was not sent there.",
                             f"Check {URL_ENV}: it should be the LMS home address the user logs in to.",
                             status=response.status_code,
@@ -532,8 +618,8 @@ class Http:
             next_url = _next_link(reply.header("link"))
             if not next_url:
                 break
-            next_url = urljoin(reply.url, next_url)
-            if not self.same_origin(next_url):
+            next_url = join_url(reply.url, next_url)
+            if not next_url or not self.same_origin(next_url):
                 break  # 다른 호스트로 가는 다음 쪽에는 토큰을 싣지 않는다
             url, page_params = next_url, None
         assert first is not None
@@ -541,9 +627,14 @@ class Http:
 
     # ── 내려받기 ──
 
-    def download(self, url: str, folder: Path, max_bytes: int, *, auth: bool = True) -> Download:
-        """파일을 folder 안 임시 파일로 받는다. 리디렉션은 직접 따라가며 다른 origin에는 토큰을 싣지 않는다."""
-        deadline = time.monotonic() + DOWNLOAD_DEADLINE
+    def download(self, url: str, folder: Path, max_bytes: int, *, auth: bool = True,
+                 seconds: float | None = None) -> Download:
+        """파일을 folder 안 임시 파일로 받는다. 리디렉션은 직접 따라가며 다른 origin에는 토큰을 싣지 않는다.
+
+        seconds를 주면 DOWNLOAD_DEADLINE보다 짧게 끊는다(sync가 남은 시간을 넘긴다). 응답 머리도 그 안에서 기다린다.
+        """
+        limit = DOWNLOAD_DEADLINE if seconds is None else max(1.0, min(DOWNLOAD_DEADLINE, seconds))
+        deadline = time.monotonic() + limit
         for _ in range(MAX_REDIRECTS + 1):
             if not self.allowed_target(url):
                 raise LmsError("The file link is not https; refused to download it.")
@@ -551,12 +642,17 @@ class Http:
                 raise LmsError("The file link would carry the token to another site; refused.")
             headers = self._headers(url, auth, extra={"Accept": "*/*"})
             try:
-                response = self.client.send(self.client.build_request("GET", url, headers=headers), stream=True)
+                response = send_before(self.client, self.client.build_request("GET", url, headers=headers), deadline)
+            except TooSlow:
+                raise LmsError(f"The download took over {limit:.0f} s and was stopped.") from None
             except httpx.HTTPError as exc:
                 raise self._network_error(exc, url) from None
             try:
                 if response.status_code in (301, 302, 303, 307, 308) and response.headers.get("location"):
-                    url = urljoin(str(response.url), response.headers["location"])
+                    target = join_url(str(response.url), response.headers["location"])
+                    if target is None:
+                        raise LmsError("The LMS gave a broken download link.")
+                    url = target
                     continue
                 if response.status_code in (401, 403):
                     raise LmsError("The LMS refused the download (no permission or the file is locked).",
@@ -568,15 +664,18 @@ class Http:
                 length = response.headers.get("content-length")
                 if length and length.isdigit() and int(length) > max_bytes:
                     raise LmsError(f"The file is too large (over {max_bytes // 1024 // 1024} MB).")
-                return self._save_stream(response, folder, max_bytes, deadline)
+                return self._save_stream(response, folder, max_bytes, deadline, limit)
             finally:
                 response.close()
         raise LmsError("The download redirected too many times.")
 
-    def _save_stream(self, response: Any, folder: Path, max_bytes: int, deadline: float) -> Download:
+    def _save_stream(self, response: Any, folder: Path, max_bytes: int, deadline: float, limit: float) -> Download:
         digest = hashlib.sha256()
         total = 0
-        fd, tmp_name = tempfile.mkstemp(prefix=".lms-", suffix=".part", dir=folder)
+        try:
+            fd, tmp_name = tempfile.mkstemp(prefix=".lms-", suffix=".part", dir=folder)
+        except OSError as exc:
+            raise LmsError(f"Could not write in the materials folder ({type(exc).__name__}).") from None
         tmp = Path(tmp_name)
         try:
             with os.fdopen(fd, "wb") as out:
@@ -585,12 +684,15 @@ class Http:
                     if total > max_bytes:
                         raise LmsError(f"The file is too large (over {max_bytes // 1024 // 1024} MB).")
                     if time.monotonic() > deadline:
-                        raise LmsError(f"The download took over {DOWNLOAD_DEADLINE:.0f} s and was stopped.")
+                        raise LmsError(f"The download took over {limit:.0f} s and was stopped.")
                     digest.update(chunk)
                     out.write(chunk)
         except httpx.HTTPError as exc:
             tmp.unlink(missing_ok=True)
             raise self._network_error(exc, str(response.url)) from None
+        except OSError as exc:  # 디스크가 꽉 참 등
+            tmp.unlink(missing_ok=True)
+            raise LmsError(f"Could not save the file ({type(exc).__name__}: disk full or not writable).") from None
         except BaseException:
             tmp.unlink(missing_ok=True)
             raise
@@ -605,7 +707,7 @@ def _parse_json(body: bytes) -> Any:
         return None
     try:
         return json.loads(text)
-    except ValueError:
+    except (ValueError, RecursionError):  # 아주 깊게 중첩된 JSON도 못 읽은 것으로 본다
         return None
 
 
@@ -619,7 +721,9 @@ def _next_link(header: str) -> str | None:
 
 def add_query(url: str, **params: str) -> str:
     """주소의 쿼리에 값을 더한다(같은 이름이 있으면 바꾼다)."""
-    parts = urlsplit(url)
+    parts = split_url(url)
+    if parts is None:
+        raise LmsError("The LMS gave a broken link.")
     query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in params]
     query.extend(params.items())
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query), ""))

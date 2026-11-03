@@ -6,23 +6,42 @@ Moodle은 에러도 HTTP 200 + {"exception", "errorcode", "message"}로 돌려�
 있어("잘못된 토큰 - 토큰이 발견되지 않았습니다.") errorcode·exception으로만 판단한다.
 Coursemos(UbiOn)는 공지를 표준 뉴스 포럼이 아니라 게시판 플러그인(mod_ubboard)에 두는 곳이 많아, 뉴스 포럼이
 없으면 빈 목록과 함께 그 사실을 알린다.
+파일 id는 "<모듈 id>.<파일 주소 경로 해시 15자리>"다. 목록 순번을 쓰면 폴더에 파일이 끼어들 때 id가 다른 파일로
+옮겨 가서 sync가 엉뚱한 파일에 덮어쓴다. 예전 형식(<모듈 id>.<순번>)은 LEGACY_ID로 알아본다.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 import time
 from datetime import datetime
 from typing import Any
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import unquote, urlunsplit
 
-from openstem.lms.client import Http, LmsError, add_query, how_to_connect, not_api_error
+from openstem.lms.client import Http, LmsError, add_query, how_to_connect, not_api_error, split_url
 from openstem.lms.common import parse_time
 
 KIND = "moodle"
 REST_PATH = "/webservice/rest/server.php"
 NEWS_PER_FORUM = 10
 MAX_FORUMS = 30
+EVENTS_PER_PAGE = 50  # 마감 일정 API 한 번에 받는 수(aftereventid로 다음 쪽)
+EVENT_PAGES = 4
+FILE_ID_DIGITS = 15
+LEGACY_ID = re.compile(r"[0-9]{1,20}\.[0-9]{1,6}")  # 예전 파일 id(<모듈 id>.<contents 순번>)
+
+
+def file_key(module_id: int, item: dict[str, Any]) -> str:
+    """파일 하나의 안정적인 id: 모듈 id + 파일 주소 경로(쿼리 제외, /webservice 유무 무시)의 해시."""
+    raw = item.get("fileurl")
+    parts = split_url(raw) if isinstance(raw, str) and raw else None
+    if parts is not None and "/pluginfile.php/" in parts.path:
+        where = unquote(parts.path.split("/pluginfile.php/", 1)[1])
+    else:
+        where = f"{item.get('filepath') or '/'}{item.get('filename') or ''}"
+    digest = int(hashlib.sha256(where.encode("utf-8")).hexdigest()[:12], 16)
+    return f"{module_id}.{digest:0{FILE_ID_DIGITS}d}"
 NO_NEWS_NOTE = ("No standard announcement forum was found in these courses: this school's notice board "
                 "(often a board plugin) may not be reachable via the API. Check notices on the LMS website.")
 
@@ -85,6 +104,7 @@ class Moodle:
     def __init__(self, http: Http) -> None:
         self.http = http
         self.notes: list[str] = []
+        self.deadlines_truncated = False  # 마감 일정이 쪽 넘기기 상한(200개)을 넘었다
         self._site: dict[str, Any] | None = None
 
     def call(self, function: str, **params: Any) -> Any:
@@ -128,15 +148,38 @@ class Moodle:
 
     # ── 마감 ──
 
+    def _events(self, start: datetime, end: datetime, course_id: Any) -> list[dict[str, Any]]:
+        """할 일 일정. 과목을 고르면 그 과목 함수로(전체 50개에서 거르면 잘린다), 쪽을 넘기며 최대 200개."""
+        window = {"timesortfrom": int(start.timestamp()), "timesortto": int(end.timestamp())}
+        function, params = "core_calendar_get_action_events_by_timesort", {**window, "limittononsuspendedevents": 1}
+        if course_id is not None:
+            function, params = "core_calendar_get_action_events_by_course", {"courseid": course_id, **window}
+        events: list[dict[str, Any]] = []
+        after: int | None = None
+        for _ in range(EVENT_PAGES):
+            extra = {"aftereventid": after} if after is not None else {}
+            try:
+                payload = self.call(function, **params, limitnum=EVENTS_PER_PAGE, **extra)
+            except LmsError as exc:
+                if course_id is None or events or exc.code not in ("missingfunction", "accessexception"):
+                    raise
+                self.notes.append("This LMS cannot list deadlines per course; filtered from all courses (may be incomplete).")
+                return self._events(start, end, None)
+            rows = payload.get("events") if isinstance(payload, dict) else payload if isinstance(payload, list) else None
+            page = [ev for ev in rows or [] if isinstance(ev, dict)]
+            events.extend(page)
+            last = page[-1].get("id") if page else None
+            if len(page) < EVENTS_PER_PAGE or not isinstance(last, int) or last == after:
+                return events
+            after = last
+        self.deadlines_truncated = True
+        self.notes.append(f"The LMS has more than {len(events)} deadlines in this window; showing the first ones. "
+                          "Pass course or fewer days to narrow.")
+        return events
+
     def deadlines(self, start: datetime, end: datetime, course_id: Any = None) -> list[dict[str, Any]]:
-        payload = self.call(
-            "core_calendar_get_action_events_by_timesort",
-            timesortfrom=int(start.timestamp()), timesortto=int(end.timestamp()),
-            limitnum=50, limittononsuspendedevents=1,
-        )
-        events = payload.get("events") if isinstance(payload, dict) else None
         out = []
-        for ev in events or []:
+        for ev in self._events(start, end, course_id):
             if not isinstance(ev, dict):
                 continue
             due = parse_time(ev.get("timesort") or ev.get("timestart"))
@@ -214,7 +257,7 @@ class Moodle:
                 if not isinstance(module, dict) or not isinstance(module.get("id"), int):
                     continue
                 modname = module.get("modname")
-                for i, item in enumerate(module.get("contents") or []):
+                for item in module.get("contents") or []:
                     if not isinstance(item, dict) or item.get("type") != "file":
                         continue
                     filename = str(item.get("filename") or "")
@@ -223,7 +266,7 @@ class Moodle:
                     path = str(item.get("filepath") or "/").strip("/")
                     folder = " / ".join(x for x in (section.get("name"), module.get("name"), path) if x)
                     out.append({
-                        "id": f"{module['id']}.{i}",
+                        "id": file_key(module["id"], item),
                         "name": filename,
                         "size": item.get("filesize") if isinstance(item.get("filesize"), int) else None,
                         "updated": parse_time(item.get("timemodified")),
@@ -246,7 +289,9 @@ class Moodle:
             raise LmsError("The LMS gave no download link for this file.")
         if not self.http.same_origin(raw):
             raise LmsError("The file link points to another site; refused to send the token there.")
-        parts = urlsplit(raw)
+        parts = split_url(raw)
+        if parts is None:
+            raise LmsError("The LMS gave a broken download link for this file.")
         path = parts.path
         if "/webservice/pluginfile.php/" not in path:
             path = path.replace("/pluginfile.php/", "/webservice/pluginfile.php/", 1)

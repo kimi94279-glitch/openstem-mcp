@@ -18,6 +18,8 @@ MAX_BYTES = 2 * 1024 * 1024
 MAX_EVENTS = 500
 VALUE_LIMIT = 20_000
 DETAILS_LIMIT = 200  # DESCRIPTION을 돌려줄 때 글자 수
+MAX_DEPTH = 32  # BEGIN 중첩 상한(정상 파일은 VCALENDAR > VTIMEZONE > STANDARD 정도로 3~4단)
+MIN_YEAR, MAX_YEAR = 1971, 2200  # 이 밖의 날짜는 버린다(9999년은 시간대 변환에서 OverflowError)
 
 SEOUL = timezone(timedelta(hours=9), "KST")
 _SEOUL_NAMES = {"asia/seoul", "korea standard time", "kst", "rok", "korea", "seoul"}
@@ -153,9 +155,11 @@ def parse_time(value: str, params: dict[str, str], offsets: dict[str, tzinfo]) -
     try:
         if params.get("VALUE", "").upper() == "DATE" or re.fullmatch(r"\d{8}", value):
             m = re.fullmatch(r"(\d{4})(\d{2})(\d{2})", value[:8])
-            return date(int(m[1]), int(m[2]), int(m[3])) if m else None
+            if not m or not MIN_YEAR <= int(m[1]) <= MAX_YEAR:
+                return None
+            return date(int(m[1]), int(m[2]), int(m[3]))
         m = re.fullmatch(r"(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})?(Z)?", value, re.IGNORECASE)
-        if not m:
+        if not m or not MIN_YEAR <= int(m[1]) <= MAX_YEAR:
             return None
         dt = datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]), min(int(m[6] or 0), 59))
     except ValueError:  # 13월 같은 값
@@ -182,6 +186,7 @@ def parse(data: bytes, window: tuple[datetime, datetime] | None = None) -> tuple
     events: list[Event] = []
     truncated = False
     stack: list[str] = []
+    in_timezone = 0  # stack 안의 VTIMEZONE 수(매 줄 stack을 훑지 않는다)
     offsets: dict[str, tzinfo] = {}
     pending: list[tuple[str, dict[str, str], str]] = []  # 시간 값은 VTIMEZONE을 다 읽은 뒤 해석한다
     current: Event | None = None
@@ -195,7 +200,10 @@ def parse(data: bytes, window: tuple[datetime, datetime] | None = None) -> tuple
         name, params, value = parsed
         if name == "BEGIN":
             kind = value.strip().upper()
+            if len(stack) >= MAX_DEPTH:
+                raise IcalError(f"The calendar is nested too deeply (over {MAX_DEPTH} levels).")
             stack.append(kind)
+            in_timezone += kind == "VTIMEZONE"
             if kind in ("VEVENT", "VTODO") and current is None:
                 current, pending = Event(component=kind), []
             elif kind == "VTIMEZONE":
@@ -204,7 +212,7 @@ def parse(data: bytes, window: tuple[datetime, datetime] | None = None) -> tuple
         if name == "END":
             kind = value.strip().upper()
             if stack and stack[-1] == kind:
-                stack.pop()
+                in_timezone -= stack.pop() == "VTIMEZONE"
             if kind in ("VEVENT", "VTODO") and current is not None:
                 raw_events.append((current, pending))
                 current = None
@@ -225,7 +233,7 @@ def parse(data: bytes, window: tuple[datetime, datetime] | None = None) -> tuple
                 current.categories.extend(_categories(value))
             elif name == "STATUS":
                 current.status = value.strip().upper()
-        elif "VTIMEZONE" in stack:
+        elif in_timezone:
             if name == "TZID" and inside == "VTIMEZONE":
                 tz_name = value.strip()
             elif name == "TZOFFSETTO" and inside in ("STANDARD", "DAYLIGHT") and tz_name:
