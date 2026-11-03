@@ -15,7 +15,7 @@
     ok: true
     no_warnings: true
     fits: [{model: linear, params: {a: [5.0, 0.1], b: [0.0, 0.05]}, r2_min: 0.999}]
-    contains: ['"weighted": true', '"chi2_red"', '"equation": "y = (']
+    contains: ['"weighted": true', '"chi2_red"', '"equation": "y = (', "rescaled by √χ²_red"]
 
 - id: outlier-beyond-three-sigma
   input:
@@ -71,7 +71,7 @@
   expect:
     ok: true
     fits: [{model: exponential, params: {A: [1000, 10], B: [-0.05, 0.001]}, r2_min: 0.999}]
-    contains: ['"label": "N"', '"weighted": true']
+    contains: ['"label": "N"', '"weighted": true', "straight line fitted to ln y", "R² is computed on the original y"]
 
 - id: pendulum-markdown-two-columns-power-law
   input:
@@ -92,6 +92,7 @@
     fits:
       - {model: power, params: {A: [2.0, 0.02], B: [0.5, 0.01]}}
       - {model: power, params: {A: [2.0, 0.02], B: [0.5, 0.01]}}
+    contains: ["straight line fitted to ln y vs ln x"]
 
 - id: projectile-csv-columns-by-name
   input:

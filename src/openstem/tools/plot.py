@@ -17,7 +17,9 @@ MAX_POINTS = 5000
 MAX_TEXT = 200
 
 INPUT_HINT = "Fix the input and call again. Syntax: x**2, sqrt(x), exp(-x/5), sin(x)**2, abs(x), log(x)"
-TIMEOUT_HINT = "Timed out ({timeout:.0f} s). Simplify the expression or narrow x_range and call again. A first run can be slow; try once more."
+TIMEOUT_HINT = "Timed out ({timeout:.0f} s) while computing: the expression is too heavy to evaluate. Simplify it or narrow x_range and call again."
+# 작업자가 준비 신호를 보내기 전(라이브러리 읽기)에 시간이 넘은 경우만 "다시 해 보라"고 한다. 그 뒤의 시간 초과는 입력이 무거운 것이다.
+STARTUP_HINT = "On a first run loading the libraries can be slow; try once more."
 
 DESCRIPTION = r"""Plot y = f(x) (SVG, PNG, PDF) with a preview; asymptotes, jumps and domain gaps come back as warnings. Measured data: use plot_data.
 Example: {"series": [{"expr": "sin(x)*exp(-x/5)"}], "x_range": [0, "4*pi"]}
@@ -120,7 +122,9 @@ def plot_function(
         try:
             result = sandbox.run_python("openstem.workers.plot", payload, Path(tmp), timeout)
         except sandbox.WorkerFailed as exc:
-            message = TIMEOUT_HINT.format(timeout=timeout) if exc.timed_out else str(exc)
+            message = str(exc) if not exc.timed_out else (
+                f"{exc} {STARTUP_HINT}" if str(exc).startswith("Worker startup") else TIMEOUT_HINT.format(timeout=timeout)
+            )
             return ToolResult.failure([message])
         if not result.get("ok"):
             return ToolResult.failure(result.get("errors") or ["unknown failure"], result.get("hint"))

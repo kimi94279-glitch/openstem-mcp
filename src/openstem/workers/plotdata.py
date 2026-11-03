@@ -424,8 +424,20 @@ def fit_series(s: Series, warn: list[str]) -> None:
         "weighted": sigma is not None,
     }
     resid = v - (np.polyval(coefs, u))
+    notes = []
     if sigma is not None and n > k:
         info["chi2_red"] = round(float(np.sum((resid / sigma) ** 2) / (n - k)), 4)
+        notes.append(
+            "Weighted by 1/yerr²; the parameter errors are rescaled by √χ²_red (they follow the actual scatter, "
+            "not only the given yerr)."
+        )
+    if model.log_y:
+        notes.append(
+            f"The {s.fit} fit is a straight line fitted to ln y{' vs ln x' if model.log_x else ''}, not a least-squares fit of y itself; "
+            "R² is computed on the original y, so it differs from the R² of the linearized fit."
+        )
+    if notes:
+        info["note"] = " ".join(notes)
     s.fitted = info
     s.outliers = _outliers(resid, sigma, k, v)
     s.legend = f"{s.label} 맞춤: " if s.label else "맞춤: "

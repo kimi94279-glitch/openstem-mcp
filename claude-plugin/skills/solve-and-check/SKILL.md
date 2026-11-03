@@ -17,7 +17,7 @@ You do the reasoning; openstem only computes. Answer in the user's language.
 4. Read every result:
    - `matches: false` → use `numeric.counterexample` to find the wrong step, fix it, check again
    - `"unknown"` → judge from the numeric comparison and tell the user it was checked numerically only
-   - read `note` (positive-only equality, integration constant, divergence, radians)
+   - read `note` (positive-only equality, integration constant, divergence, radians, dropped extraneous roots, complex principal roots like `(-8)**(1/3)` → use `cbrt`)
 5. If a figure would help (circuit, free-body diagram, graph), follow the stem-figures skill.
 6. Finish with the answer and a short list of what was verified and how. Never claim a step was verified if you did not call the tool, and never change a verified result by hand.
 

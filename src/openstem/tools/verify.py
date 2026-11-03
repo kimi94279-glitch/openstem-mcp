@@ -25,10 +25,12 @@ MAX_SERIES_ORDER = 20
 INFINITY_WORDS = ("oo", "inf", "infinity")
 
 INPUT_HINT = "Fix the input and call again. Syntax (sympy): x**2, sqrt(x), exp(-x), log(x), sin(x)**2, abs(x), pi, e"
-TIMEOUT_HINT = "Timed out ({timeout:.0f} s). Check in smaller steps, or compare only the answer with equal. On a first run, try once more."
+TIMEOUT_HINT = "Timed out ({timeout:.0f} s) while computing: the input is too heavy for sympy (huge powers, factorials, long expansions). Check in smaller steps, or compare only the answer with equal."
+# 작업자가 준비 신호를 보내기 전(라이브러리 읽기)에 시간이 넘은 경우만 "다시 해 보라"고 한다. 그 뒤의 시간 초과는 입력이 무거운 것이다.
+STARTUP_HINT = "On a first run loading the libraries can be slow; try once more."
 
 DESCRIPTION = r"""Check math with sympy: a solution step, or whether an answer equals a reference in another form. You solve; this only computes.
-ops: equal (expr vs against → matches true/false/"unknown", plus a numeric check at 5 random points), simplify, solve (equation "x**2 = 4", inequality "x**2 > 4", system "x + y = 3; x - y = 1" with var="x, y"; var also isolates a formula), diff (order), integrate (bounds → definite), limit (point "0", "oo", "0+", "0-"), evaluate (point "x=2, y=3"), ode (expr "y'' + 3*y' + 2*y = sin(x)", ics "y(0)=1, y'(0)=0"; against = your solution's right-hand side), matrix (matrix rows → det, rank, inverse, eigen, rref; expr "det, eigen" picks; matrix_b → A·B), laplace (in t), inverse_laplace (in s), series (point, order), sum (bounds [1, "oo"], index n), probability (dist Normal(mean, std) | Binomial(n, p) | Poisson(λ) | Exponential(rate) | Uniform(a, b); expr is an event "X > 1.96" or a quantity "X**2" for its expectation).
+ops: equal (expr vs against → matches true/false/"unknown", plus a numeric check at 8 seeded random points in [-50, 50]), simplify, solve (equation "x**2 = 4", inequality "x**2 > 4", system "x + y = 3; x - y = 1" with var="x, y"; var also isolates a formula; roots are substituted back and extraneous ones dropped with a note), diff (order), integrate (bounds → definite), limit (point "0", "oo", "0+", "0-"), evaluate (point "x=2, y=3"), ode (expr "y'' + 3*y' + 2*y = sin(x)", ics "y(0)=1, y'(0)=0"; against = your solution's right-hand side), matrix (matrix rows → det, rank, inverse, eigen, rref; expr "det, eigen" picks; matrix_b → A·B), laplace (in t), inverse_laplace (in s), series (point, order), sum (bounds [1, "oo"], index n), probability (dist Normal(mean, std) | Binomial(n, p) | Poisson(λ) | Exponential(rate) | Uniform(a, b); expr is an event "X > 1.96" or a quantity "X**2" for its expectation).
 Example: {"op": "equal", "expr": "sin(x)**2", "against": "(1 - cos(2*x))/2"}
 Syntax: x**2, sqrt, exp, log (= ln), log10, abs, factorial; constants are pi and e only (E is a variable); radians. Physical quantities: assume="positive". Decimals become fractions; numeric comparison is relative, so 9.8 ≠ 9.81. latex=true reads expr and against as LaTeX (not for ode, matrix, probability, inequalities; send the integrand without \int).
 Check parsed and read note. matches=false: numeric.counterexample shows where it breaks. "unknown": judge from numeric and say so.
@@ -269,7 +271,9 @@ def verify_math(
         try:
             result = sandbox.run_python("openstem.workers.verify", payload, Path(tmp), timeout)
         except sandbox.WorkerFailed as exc:
-            message = TIMEOUT_HINT.format(timeout=timeout) if exc.timed_out else str(exc)
+            message = str(exc) if not exc.timed_out else (
+                f"{exc} {STARTUP_HINT}" if str(exc).startswith("Worker startup") else TIMEOUT_HINT.format(timeout=timeout)
+            )
             return ToolResult.failure([message])
     if not result.get("ok"):
         return ToolResult.failure(result.get("errors") or ["unknown failure"], result.get("hint"))

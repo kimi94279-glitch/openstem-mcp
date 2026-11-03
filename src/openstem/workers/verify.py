@@ -32,7 +32,10 @@ from openstem.workers import WorkerError, serve
 SYMBOLIC_BUDGET = 12.0  # 기호 계산 전체에 쓰는 시간(초). 작업자 타임아웃(기본 20초)보다 짧게 둔다.
 EXTRA_CAP = 2.0  # 판정이 끝난 뒤 덧붙이는 확인(상수 차이 등) 한 번에 쓰는 시간
 POSITIVE_CAP = 3.0  # 양수 가정으로 다시 확인할 때 기호 계산 한 번에 쓰는 시간
-NUMERIC_POINTS = 5
+NUMERIC_POINTS = 8
+# 수치 비교 점의 크기(1/100 단위). 작은 값만 보면 Min(x, 3)과 x, acos(cos(x))와 abs(x)를 가르지 못한다.
+SAMPLE_BANDS = ((10, 300), (300, 1000), (10, 300), (300, 1000), (1000, 5000), (10, 300), (300, 1000), (1000, 5000))
+SAMPLE_LIMIT = SAMPLE_BANDS[4][1] // 100
 NUMERIC_ATTEMPTS = 80
 REL_TOL = 1e-8
 ABS_TOL = 1e-150  # 0 근처 값만 절대 오차로 본다(그 밖은 상대 오차)
@@ -141,6 +144,12 @@ def _parse_latex(text: str, where: str, operand_of: str | None = None) -> sp.Bas
     except Exception as exc:
         first = (str(exc).strip().splitlines() or [type(exc).__name__])[0][:150]
         raise WorkerError([f"{where}: cannot parse LaTeX: {first}"], LATEX_HINT) from None
+    # \sqrt[3]{-8}는 실수 세제곱근(-2)이다. parse_latex는 근호만 지수를 Rational(1, n)으로 남기므로
+    # (x^{1/3}은 1*3**-1 꼴) 그것만 골라 홀수 차수를 real_root로 바꾼다. subs·doit이 지수를 합치기 전에 해야 한다.
+    expr = expr.replace(
+        lambda e: e.is_Pow and isinstance(e.exp, sp.Rational) and e.exp.p == 1 and e.exp.q % 2 == 1 and e.exp.q > 1,
+        lambda e: sp.real_root(e.base, e.exp.q),
+    )
     if operand_of and expr.has(sp.Integral, sp.Derivative, sp.Limit, sp.Sum):
         raise _calculus_error(where, operand_of)
     if undefined := sorted({str(f) for f in expr.atoms(AppliedUndef)}):
@@ -271,6 +280,24 @@ def show(expr: sp.Basic) -> dict[str, Any]:
     return out
 
 
+def odd_root_note(*exprs: sp.Basic) -> str | None:
+    """음수일 수 있는 밑의 홀수 분수 거듭제곱((-8)**(1/3), x**(1/3))은 sympy가 복소수 주가지로 계산한다고 알린다."""
+    for expr in exprs:
+        for pw in expr.atoms(sp.Pow):
+            q = pw.exp.q if isinstance(pw.exp, sp.Rational) else 0
+            if q > 1 and q % 2 == 1 and pw.base.is_nonnegative is not True:
+                base, n, k = sstr(pw.base), q, pw.exp.p
+                if n == 3:
+                    real = f"cbrt({base})" + (f"**{k}" if k != 1 else "")
+                else:
+                    real = ("" if k % 2 == 0 else f"sign({base})*") + f"abs({base})**({k}/{n})"
+                return (
+                    f"{sstr(pw)} uses the principal complex root when the base is negative (e.g. (-8)**(1/3) = 1 + 1.732i, not -2). "
+                    f"For the real root write {real}."
+                )
+    return None
+
+
 def degree_hint(*exprs: sp.Basic) -> str | None:
     """sin(30)처럼 pi 없는 숫자를 넣은 삼각함수가 있으면 라디안 안내를 돌려준다."""
     for expr in exprs:
@@ -307,15 +334,26 @@ def close(a: float, b: float) -> bool:
     return abs(a - b) <= max(REL_TOL * max(abs(a), abs(b)), ABS_TOL)
 
 
+def sample_point(rng: random.Random, symbols: list[sp.Symbol], k: int) -> dict[sp.Symbol, sp.Basic]:
+    """k번째 비교 점. 크기는 SAMPLE_BANDS를 돌아가며(0.1~3, 3~10, 10~50), 부호는 무작위(양수 변수는 양수)."""
+    lo, hi = SAMPLE_BANDS[k % len(SAMPLE_BANDS)]
+    return {s: sp.Rational((1 if s.is_positive else rng.choice([-1, 1])) * rng.randint(lo, hi), 100) for s in symbols}
+
+
+def sampled_range(points: list[dict[str, float]]) -> str:
+    values = [v for p in points for v in p.values()]
+    return f"[{min(values):g}, {max(values):g}]"
+
+
 def numeric_compare(a: sp.Basic, b: sp.Basic, symbols: list[sp.Symbol]) -> dict[str, Any]:
-    """무작위 점(변수마다 -3~3, 0 제외. 양수 변수는 0~3)에서 두 식의 실수 값을 비교한다."""
+    """무작위 점(변수마다 -50~50, 0 근처 제외. 양수 변수는 양수)에서 두 식의 실수 값을 비교한다. 시드는 고정(재현성)."""
     rng = random.Random(20261102)
     checked: list[dict[str, float]] = []
     one_sided = 0
     for _ in range(NUMERIC_ATTEMPTS if symbols else 1):
         if len(checked) >= NUMERIC_POINTS:
             break
-        point = {s: sp.Rational((1 if s.is_positive else rng.choice([-1, 1])) * rng.randint(10, 300), 100) for s in symbols}
+        point = sample_point(rng, symbols, len(checked))
         va, vb = real_value(a, point), real_value(b, point)
         if va is None or vb is None:
             one_sided += (va is None) != (vb is None)
@@ -438,7 +476,20 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     if verdict is True:
         out.update(matches=True, method="symbolic")
         return out
-    if verdict is False:
+    if verdict is False and symbols and (not numeric["checked"] or not numeric.get("domain_note")):
+        # sympy의 equals()는 복소수 점에서도 비교한다. 실수 점에서 반례가 없으면 '다르다'고 단정하지 않는다
+        # (abs(x - 1) + abs(x + 1)과 2*Max(1, abs(x)), atan(x) + atan(1/x)과 pi/2*sign(x) 등).
+        verdict = None
+        if numeric["checked"]:
+            notes.append(
+                f"sympy's symbolic test reports a difference, but it also tests complex values; over the reals they are "
+                f"numerically equal at all {numeric['checked']} points sampled in {sampled_range(numeric['points'])} (not a proof)."
+            )
+        else:
+            notes.append("Found no real points where both have a value, so they could not be compared over the reals.")
+            notes += _log_abs_note(ea, eb, symbols)
+        out.update(matches="unknown", method="numeric")
+    elif verdict is False:
         out.update(matches=False, method="symbolic")
     else:
         out.update(matches="unknown", method="numeric")
@@ -446,13 +497,27 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         if not numeric["checked"]:
             notes.append("Found no points where both could be compared numerically.")
         elif symbols:
-            notes.append(f"Numerically equal at all {numeric['checked']} points (not a proof).")
+            notes.append(f"Numerically equal at all {numeric['checked']} points sampled in {sampled_range(numeric['points'])} (not a proof).")
         else:
             notes.append("The two values agree numerically (not a proof).")
     if recheck and positive_equal(ea, eb, budget):
         notes.append(POSITIVE_NOTE)
     out["note"] = " ".join(notes)
     return out
+
+
+def _log_abs_note(a: sp.Basic, b: sp.Basic, symbols: list[sp.Symbol]) -> list[str]:
+    """log(…)를 ln|…|로 읽으면(부정적분의 관례) 같은지. -log(sin(x) - 1)/2 + …는 실수 x에서 값이 없다."""
+    if not (a.has(sp.log) or b.has(sp.log)):
+        return []
+    to_abs = {sp.log: lambda *args: sp.log(sp.Abs(args[0]), *args[1:])}
+    try:
+        again = numeric_compare(a.replace(sp.log, to_abs[sp.log]), b.replace(sp.log, to_abs[sp.log]), symbols)
+    except Exception:  # 덧붙이는 확인이라 실패하면 생략
+        return []
+    if again["agree"] and again["checked"]:
+        return [f"Reading every log(…) as ln|…| (as for antiderivatives), they agree at all {again['checked']} points sampled in {sampled_range(again['points'])}."]
+    return []
 
 
 def op_simplify(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
@@ -493,6 +558,53 @@ def _finite_part(sol: sp.Set) -> list[sp.Basic] | None:
     return None
 
 
+def _undefined_part(expr: sp.Basic, point: dict[sp.Symbol, sp.Basic]) -> sp.Basic | None:
+    """그 점에서 실수 값이 없는 부분식(log(-3), sqrt(-1), 1/0 등). 모두 정의되면 None.
+
+    좌변 - 우변 전체만 보면 log(-2) + log(-5) - log(10) = 2πi처럼 허수가 남거나, 허수끼리 지워져 가짜 해가 통과한다.
+    Piecewise는 고른 갈래만 의미가 있으므로 안을 들여다보지 않는다.
+    """
+    if not isinstance(expr, sp.Expr) or expr.is_Atom or not (expr.free_symbols & set(point)):
+        return None
+    if not isinstance(expr, sp.Piecewise):
+        for arg in expr.args:
+            if (bad := _undefined_part(arg, point)) is not None:
+                return bad
+    return expr if real_value(expr, point) is None else None
+
+
+def check_root(eq: sp.Expr, point: dict[sp.Symbol, sp.Basic]) -> str | None:
+    """sympy가 낸 해를 원래 식(좌변 - 우변)에 다시 넣어 본다. 실수 해가 아니면 이유를, 맞으면 None을 돌려준다.
+
+    값이 숫자로 정해지지 않는 해(다른 문자가 남는 공식)는 판정하지 않는다(None).
+    """
+    if any(not sp.sympify(v).is_number for v in point.values()):
+        return None
+    if (bad := _undefined_part(eq, point)) is not None:
+        return f"{sstr(bad)} has no real value there"
+    value = real_value(eq, point)
+    terms = [real_value(t, point) for t in sp.Add.make_args(eq)]
+    if value is None or None in terms:
+        return "the equation has no real value there"
+    if abs(value) > 1e-9 * max(sum(abs(t) for t in terms), 1.0):
+        return "the two sides are not equal there"
+    return None
+
+
+def _drop_false_roots(eq: sp.Expr, v: sp.Symbol, roots: list[sp.Basic], notes: list[str]) -> list[sp.Basic]:
+    kept, dropped = [], []
+    for r in roots:
+        reason = check_root(eq, {v: r})
+        (dropped if reason else kept).append((r, reason))
+    if dropped:
+        notes.append(
+            "Substituted back and dropped "
+            + "; ".join(f"{v.name} = {sstr(r)} ({reason})" for r, reason in dropped)
+            + ". Not a real solution (extraneous root)."
+        )
+    return [r for r, _ in kept]
+
+
 def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
     out: dict[str, Any] = {"parsed": f"{clip(sstr(eq))} = 0", "variable": v.name}
     others = ", ".join(sorted(s.name for s in eq.free_symbols - {v}))
@@ -525,7 +637,8 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
         try:
             near = budget.run(sol.intersect, window, cap=EXTRA_CAP)
             if isinstance(near, sp.FiniteSet) and near:
-                out["solutions"] = [show(s) for s in sorted(near, key=sp.default_sort_key)[:MAX_SOLUTIONS]]
+                near = _drop_false_roots(eq, v, sorted(near, key=sp.default_sort_key), notes)
+                out["solutions"] = [show(s) for s in near[:MAX_SOLUTIONS]]
                 notes.append(f"solutions lists those in {label}.")
         except Exception:
             pass
@@ -541,6 +654,12 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
     if found is not None and others and not isinstance(sol, sp.FiniteSet) and not POSITIVE:
         notes.append(f'Solutions valid when real, depending on the other letters ({others}). For physical quantities solve with assume="positive".')
     if found is not None:
+        if found:
+            found = _drop_false_roots(eq, v, list(found), notes)
+            if not found:
+                out["solutions"] = []
+                out["note"] = " ".join([*notes, "No real solutions."])
+                return out
         if v.is_positive and (kept := [s for s in found if s.is_positive is not False]) != found:
             found = kept
             notes.append("Dropped non-positive solutions (assume=positive).")
@@ -584,13 +703,24 @@ def op_solve(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     if len(eqs) == 1 and len(unknowns) == 1:
         return _solve_single(eqs[0], unknowns[0], budget)
     solutions = budget.run(lambda: sp.solve(eqs, unknowns, dict=True))
+    dropped = []
+    for sol in list(solutions):
+        reasons = [r for e in eqs if (r := check_root(e, sol))]
+        if reasons:
+            solutions.remove(sol)
+            dropped.append(", ".join(f"{k.name} = {sstr(val)}" for k, val in sol.items()) + f" ({reasons[0]})")
     out: dict[str, Any] = {
         "parsed": [f"{clip(sstr(e))} = 0" for e in eqs],
         "variables": [u.name for u in unknowns],
         "solutions": [{k.name: show(v) for k, v in s.items()} for s in solutions[:MAX_SOLUTIONS]],
     }
+    notes = []
+    if dropped:
+        notes.append(f"Substituted back and dropped {'; '.join(dropped)}. Not a real solution (extraneous root).")
     if not solutions:
-        out["note"] = "No solution (or sympy could not find one)."
+        notes.append("No solution (or sympy could not find one).")
+    if notes:
+        out["note"] = " ".join(notes)
     return out
 
 
@@ -625,6 +755,8 @@ def op_integrate(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         out["note"] = "The integration constant C is omitted."
         if not POSITIVE and result.atoms(sp.log) - expr.atoms(sp.log):  # ∫1/x dx = log(x)
             out["note"] += " Over the reals read log(…) as ln|…| (e.g. ∫1/x dx = ln|x|)."
+        if root := odd_root_note(expr):
+            out["note"] += " " + root
         return out
 
     lo, hi = (parse_point(str(b))[0] for b in bounds)
@@ -635,6 +767,13 @@ def op_integrate(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         result = sp.Integral(expr, (v, lo, hi))
     if result in (sp.oo, -sp.oo):
         out.update(result=sstr(result), note=f"The definite integral diverges to {'+' if result == sp.oo else '-'}∞.")
+        return out
+    if result.has(sp.AccumBounds):  # ∫_0^∞ sin(x) dx: 부분 적분값이 0과 2 사이를 오간다
+        bounds_text = ", ".join(f"{sstr(b.min)} … {sstr(b.max)}" for b in result.atoms(sp.AccumBounds))
+        out.update(
+            result="diverges (oscillates)",
+            note=f"The definite integral does not converge: the partial integrals keep oscillating (between {bounds_text}) and approach no single value.",
+        )
         return out
     if result.has(sp.nan, sp.zoo):
         out.update(result="diverges", note="The definite integral diverges and has no value (the function goes to infinity inside the interval).")
@@ -654,6 +793,8 @@ def op_integrate(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         out["note"] = "approx is a numerical integral."
         return out
     out.update(show(result))
+    if (root := odd_root_note(expr)) and not (isinstance(lo, sp.Basic) and lo.is_nonnegative):
+        out["note"] = root
     return out
 
 
@@ -709,6 +850,8 @@ def op_evaluate(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         notes.append(f"No value for {names}, so the result stays symbolic. Give values in point (e.g. \"x=2\").")
     if unused:
         notes.append(f"Ignored {', '.join(unused)} in point (not in the expression).")
+    if value.is_number and not undefined and value.is_real is not True and (root := odd_root_note(expr) or odd_root_note(expr.subs(subs))):
+        notes.append(root)
     if hint := degree_hint(expr):
         notes.append(hint)
     if notes:

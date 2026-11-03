@@ -19,7 +19,9 @@ MAX_TEXT = 200
 MAX_COLUMN_NAME = 100
 
 INPUT_HINT = 'Fix the input and call again. E.g. {"series": [{"x": [1, 2, 3], "y": [2.1, 3.9, 6.2], "yerr": 0.2}], "fit": "linear"}'
-TIMEOUT_HINT = "Timed out ({timeout:.0f} s). Use fewer points and call again. A first run can be slow; try once more."
+TIMEOUT_HINT = "Timed out ({timeout:.0f} s) while computing: too much data or a fit that does not settle. Use fewer points and call again."
+# 작업자가 준비 신호를 보내기 전(라이브러리 읽기)에 시간이 넘은 경우만 "다시 해 보라"고 한다. 그 뒤의 시간 초과는 입력이 무거운 것이다.
+STARTUP_HINT = "On a first run loading the libraries can be slow; try once more."
 
 DESCRIPTION = r"""Plot measured data with error bars and fit a curve (equation with ± standard errors, R²). For lab reports.
 Example: {"series": [{"x": [0.1, 0.2, 0.3], "y": [0.52, 0.98, 1.55], "yerr": 0.05}], "fit": "linear", "x_label": "m (kg)"}
@@ -152,7 +154,9 @@ def plot_data(
         try:
             result = sandbox.run_python("openstem.workers.plotdata", payload, Path(tmp), timeout)
         except sandbox.WorkerFailed as exc:
-            message = TIMEOUT_HINT.format(timeout=timeout) if exc.timed_out else str(exc)
+            message = str(exc) if not exc.timed_out else (
+                f"{exc} {STARTUP_HINT}" if str(exc).startswith("Worker startup") else TIMEOUT_HINT.format(timeout=timeout)
+            )
             return ToolResult.failure([message])
         if not result.get("ok"):
             return ToolResult.failure(result.get("errors") or ["unknown failure"], result.get("hint"))

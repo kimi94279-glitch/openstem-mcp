@@ -17,6 +17,7 @@ verify_math의 확장 문법도 여기서 글자 단위로만 나눈다(sympy �
 from __future__ import annotations
 
 import keyword
+import math
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -97,6 +98,34 @@ def detect_variables(tokens: list[Token]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(t.text for t in tokens if t.kind == "name" and t.text not in known))
 
 
+_GREEK = (
+    "alpha", "beta", "gamma", "delta", "epsilon", "zeta", "eta", "theta", "iota", "kappa", "lambda", "lam", "mu",
+    "nu", "xi", "omicron", "rho", "sigma", "tau", "upsilon", "phi", "chi", "psi", "omega",
+)  # fmt: skip
+# 함수 이름 뒤에 붙은 인수: 글자 하나(앞뒤 숫자 허용, 2x·x2) 또는 그리스 문자 이름. "cost"는 cos(t)로 본다.
+_GLUED_ARG = re.compile(rf"^(?:[0-9]*[A-Za-z][0-9]*|[0-9]*(?:{'|'.join(_GREEK)})[0-9]*|[0-9]+)$")
+_PREFIXES = sorted([*FUNCTIONS, "pi"], key=len, reverse=True)
+
+
+def glued_function_error(name: str) -> str | None:
+    """sinx·lnx·sqrtx·cost처럼 함수 이름에 인수가 붙은 이름이면 고칠 방법을, 아니면 None을 돌려준다.
+
+    이런 이름을 변수 하나로 읽으면 diff("sinx") = 1처럼 학생이 틀린 답을 맞다고 믿게 된다.
+    """
+    if name in FUNCTIONS or name in CONSTANTS:
+        return None
+    for prefix in _PREFIXES:
+        rest = name[len(prefix) :]
+        if name.startswith(prefix) and rest and _GLUED_ARG.match(rest):
+            arg = re.sub(r"^([0-9]+)(?=[A-Za-z])", r"\1*", rest)
+            meant = f"pi*{arg}" if prefix == "pi" else f"{prefix}({arg})"
+            return (
+                f"'{name}' looks like {meant} written without {'*' if prefix == 'pi' else 'parentheses'}. Did you mean {meant}? "
+                "As a variable name, use one that does not start with a function name."
+            )
+    return None
+
+
 def variable_name_error(name: str) -> str | None:
     if name in CONSTANTS:
         return f"'{name}' is a constant (e: Euler's number, pi) and cannot be assigned or used as a variable. For a variable use another name (e.g. E for energy)."
@@ -106,7 +135,7 @@ def variable_name_error(name: str) -> str | None:
         return f"'{name}' is a Python keyword and cannot be a variable name. Rename it (e.g. lam, val)."
     if name in _RESERVED or not _VARIABLE_RE.match(name):
         return f"Variable name '{name}' is not allowed. Use up to 10 letters/digits starting with a letter, no underscore. E.g. v0, theta, m1"
-    return None
+    return glued_function_error(name)
 
 
 def _check_auto_variables(tokens: list[Token]) -> list[str]:
@@ -128,6 +157,56 @@ def _check_auto_variables(tokens: list[Token]) -> list[str]:
     return errors
 
 
+MAX_DIGITS = 1_000_000  # 숫자만으로 된 거듭제곱(10**10**10)의 결과 자릿수 한도
+MAX_FACTORIAL = 100_000  # factorial(숫자)의 인수 한도
+
+
+def _literal_chain(tokens: list[Token], i: int) -> tuple[list[float], int]:
+    """tokens[i]부터 '숫자 ** 숫자 ** …'(^ 포함)를 읽어 (숫자들, 다음 인덱스)를 돌려준다."""
+    values = [float(tokens[i].text)]
+    j = i + 1
+    while j + 1 < len(tokens) and tokens[j].text in ("**", "^") and tokens[j + 1].kind == "num":
+        values.append(float(tokens[j + 1].text))
+        j += 2
+    return values, j
+
+
+def _log10_of_chain(values: list[float]) -> float:
+    """오른쪽부터 묶는 거듭제곱 a ** b ** c의 상용로그(자릿수). 넘치면 inf."""
+    if values[0] <= 0:
+        return 0.0
+    exponent = values[-1]
+    for v in reversed(values[1:-1]):
+        try:
+            exponent = v**exponent
+        except OverflowError:
+            return math.inf
+    return math.log10(values[0]) * exponent if values[0] != 1 else 0.0
+
+
+def heavy_errors(tokens: list[Token]) -> list[str]:
+    """계산 전에 알 수 있는 거대한 수(10**10**10, factorial(10**8))를 거절한다. 작업자가 시간 초과로 죽기 전에."""
+    errors = []
+    for i, tok in enumerate(tokens):
+        if tok.kind == "num" and (i == 0 or tokens[i - 1].text not in ("**", "^")):
+            values, end = _literal_chain(tokens, i)
+            text = "".join(t.text for t in tokens[i:end])
+            digits = _log10_of_chain(values) if len(values) > 1 else 0.0
+            if digits > MAX_DIGITS:
+                size = "more digits than can be written down" if math.isinf(digits) else f"about {digits:.3g} digits"
+                errors.append(f"'{text}' is far too large to compute ({size}). Compare such numbers through their logarithms or exponents.")
+        if tok.text == "factorial" and i + 2 < len(tokens) and tokens[i + 1].text == "(" and tokens[i + 2].kind == "num":
+            values, end = _literal_chain(tokens, i + 2)
+            if end < len(tokens) and tokens[end].text == ")":
+                digits = _log10_of_chain(values) if len(values) > 1 else math.log10(max(values[0], 1.0))
+                if digits > math.log10(MAX_FACTORIAL):
+                    arg = "".join(t.text for t in tokens[i + 2 : end])
+                    errors.append(
+                        f"factorial({arg}) is far too large to compute (max factorial({MAX_FACTORIAL})). Use Stirling's approximation or log-gamma by hand."
+                    )
+    return errors
+
+
 def check(expr: str, variables: tuple[str, ...] | None = ("x",)) -> list[str]:
     """문제가 있으면 고칠 방법을 담은 짧은 에러 문장들을 돌려준다. 없으면 [].
 
@@ -141,7 +220,7 @@ def check(expr: str, variables: tuple[str, ...] | None = ("x",)) -> list[str]:
         tokens = tokenize(expr)
     except ExprError as exc:
         return [str(exc)]
-    errors = []
+    errors = heavy_errors(tokens)
     if variables is None:
         errors += _check_auto_variables(tokens)
         variables = detect_variables(tokens)
@@ -155,6 +234,8 @@ def check(expr: str, variables: tuple[str, ...] | None = ("x",)) -> list[str]:
                     f"Variable '{tok.text}' is not allowed (allowed variables: {', '.join(variables) or 'none'}). "
                     "Replace constants with numbers."
                 )
+            elif glued := glued_function_error(tok.text):
+                errors.append(glued)
             else:
                 errors.append(f"Unknown name '{tok.text}'. Allowed functions: {', '.join(FUNCTIONS)}")
     depth = 0
