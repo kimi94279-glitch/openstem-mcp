@@ -1,0 +1,32 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.kimi94279-glitch/openstem-mcp",
+  "title": "OpenSTEM",
+  "description": "STEM study tools: LaTeX/circuit figures, math and unit checks, PDF/HWP reading, exam/slide export",
+  "repository": {
+    "url": "https://github.com/kimi94279-glitch/openstem-mcp",
+    "source": "github"
+  },
+  "version": "0.3.2",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "openstem-mcp",
+      "version": "0.3.2",
+      "transport": { "type": "stdio" },
+      "environmentVariables": [
+        { "name": "OPENSTEM_OUTPUT_DIR", "description": "Folder for generated files (default ~/OpenSTEM)", "isRequired": false },
+        { "name": "OPENSTEM_INPUT_DIR", "description": "Materials folder read_document may open (default <output>/자료)", "isRequired": false },
+        { "name": "OPENSTEM_LMS_SCHOOL", "description": "Korean university name for the read-only lms tool, e.g. 성균관대", "isRequired": false },
+        { "name": "OPENSTEM_LMS_TOKEN", "description": "Access token the student created in their LMS", "isRequired": false, "isSecret": true },
+        { "name": "OPENSTEM_LMS_CALENDAR_URL", "description": "LMS calendar feed URL (deadlines only, when no token)", "isRequired": false, "isSecret": true }
+      ]
+    },
+    {
+      "registryType": "mcpb",
+      "identifier": "https://github.com/kimi94279-glitch/openstem-mcp/releases/download/v0.3.2/openstem-0.3.2.mcpb",
+      "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
+      "transport": { "type": "stdio" }
+    }
+  ]
+}

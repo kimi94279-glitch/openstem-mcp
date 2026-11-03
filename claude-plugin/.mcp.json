@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "openstem": {
+      "command": "uvx",
+      "args": ["openstem-mcp==0.3.2"],
+      "env": {
+        "OPENSTEM_OUTPUT_DIR": "${user_config.output_dir}",
+        "OPENSTEM_INPUT_DIR": "${user_config.materials_dir}",
+        "OPENSTEM_LMS_SCHOOL": "${user_config.lms_school}",
+        "OPENSTEM_LMS_TOKEN": "${user_config.lms_token}",
+        "OPENSTEM_LMS_CALENDAR_URL": "${user_config.lms_calendar_url}"
+      }
+    }
+  }
+}

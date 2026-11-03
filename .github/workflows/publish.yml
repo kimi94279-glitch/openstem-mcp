@@ -37,3 +37,42 @@ jobs:
       - run: gh release upload "${{ github.event.release.tag_name }}" dist/*.mcpb
         env:
           GH_TOKEN: ${{ github.token }}
+
+  # 공식 MCP 레지스트리(registry.modelcontextprotocol.io)에 올린다. GitHub OIDC로 로그인하므로 토큰이 필요 없다.
+  # PyPI 소유 확인은 README의 `mcp-name:` 줄, .mcpb는 릴리스에 붙은 파일의 sha256으로 한다.
+  registry:
+    needs: [publish, bundle]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.event.release.tag_name }}
+      MCP_PUBLISHER_VERSION: v1.8.7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install mcp-publisher
+        run: |
+          gh release download "$MCP_PUBLISHER_VERSION" -R modelcontextprotocol/registry -p "mcp-publisher_linux_amd64.tar.gz"
+          tar -xzf mcp-publisher_linux_amd64.tar.gz mcp-publisher
+      - name: Fill version and bundle hash in server.json
+        run: |
+          VERSION="${TAG#v}"
+          gh release download "$TAG" -p "*.mcpb" -D bundle
+          FILE=$(ls bundle/*.mcpb)
+          SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
+          URL="https://github.com/${{ github.repository }}/releases/download/$TAG/$(basename "$FILE")"
+          jq --arg v "$VERSION" --arg sha "$SHA" --arg url "$URL" \
+            '.version = $v | .packages[0].version = $v | .packages[1].identifier = $url | .packages[1].fileSha256 = $sha' \
+            server.json > server.tmp && mv server.tmp server.json
+          cat server.json
+      - name: Wait until PyPI serves this version
+        run: |
+          for i in $(seq 1 20); do
+            curl -sf "https://pypi.org/pypi/openstem-mcp/${TAG#v}/json" > /dev/null && exit 0
+            sleep 15
+          done
+          exit 1
+      - run: ./mcp-publisher login github-oidc
+      - run: ./mcp-publisher publish

@@ -1,0 +1,46 @@
+{
+  "name": "openstem",
+  "displayName": "OpenSTEM",
+  "version": "0.3.2",
+  "description": "STEM study kit for students: draws circuits, diagrams, graphs and molecules; checks math and units with sympy; reads PDF and Korean HWP lecture files; makes cheat sheets, practice exams, flashcards, slides and lab reports; reads Korean university LMSs. Runs locally, no extra AI cost.",
+  "author": {
+    "name": "openstem-mcp contributors",
+    "url": "https://github.com/kimi94279-glitch/openstem-mcp"
+  },
+  "homepage": "https://github.com/kimi94279-glitch/openstem-mcp",
+  "repository": "https://github.com/kimi94279-glitch/openstem-mcp",
+  "license": "MIT",
+  "keywords": ["stem", "education", "math", "physics", "chemistry", "latex", "tikz", "korean", "hwp", "lms"],
+  "documentationUrl": "https://github.com/kimi94279-glitch/openstem-mcp#readme",
+  "supportUrl": "https://github.com/kimi94279-glitch/openstem-mcp/issues",
+  "privacyPolicyUrl": "https://github.com/kimi94279-glitch/openstem-mcp/blob/main/PRIVACY.md",
+  "userConfig": {
+    "output_dir": {
+      "type": "directory",
+      "title": "Output folder / 결과물 폴더",
+      "description": "Where figures and documents are saved. Empty = ~/OpenSTEM"
+    },
+    "materials_dir": {
+      "type": "directory",
+      "title": "Materials folder / 자료 폴더",
+      "description": "The only folder (besides the output folder) whose files read_document may open. Empty = <output>/자료"
+    },
+    "lms_school": {
+      "type": "string",
+      "title": "School / 학교 이름",
+      "description": "Optional. Korean university name for the read-only lms tool, e.g. 성균관대"
+    },
+    "lms_token": {
+      "type": "string",
+      "title": "LMS access token / LMS 액세스 토큰",
+      "description": "Optional. A token you create in your LMS (Canvas: Account > Settings > New Access Token; Moodle: Preferences > Security keys). Never your password.",
+      "sensitive": true
+    },
+    "lms_calendar_url": {
+      "type": "string",
+      "title": "LMS calendar URL / LMS 캘린더 주소",
+      "description": "Optional. Calendar feed URL for deadlines when your school does not allow tokens",
+      "sensitive": true
+    }
+  }
+}

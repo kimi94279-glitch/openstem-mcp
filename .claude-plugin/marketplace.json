@@ -1,0 +1,15 @@
+{
+  "name": "openstem",
+  "description": "OpenSTEM: local MCP server and study skills for science and engineering students",
+  "owner": {
+    "name": "openstem-mcp contributors",
+    "url": "https://github.com/kimi94279-glitch/openstem-mcp"
+  },
+  "plugins": [
+    {
+      "name": "openstem",
+      "source": "./claude-plugin",
+      "description": "STEM study kit: figures, math and unit checks, PDF/HWP reading, cheat sheets, practice exams, slides, lab reports, Korean university LMS"
+    }
+  ]
+}
