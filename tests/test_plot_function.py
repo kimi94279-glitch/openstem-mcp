@@ -34,7 +34,9 @@ def test_plot_function_case(case, output_dir):
     for fragment in expect.get("errors_contain", []):
         assert fragment in errors
     for fragment in expect.get("warnings_contain", []):
-        assert fragment in warnings
+        assert fragment in warnings, warnings
+    for fragment in expect.get("warnings_exclude", []):
+        assert fragment not in warnings, warnings
     if expect.get("no_warnings"):
         assert "warnings" not in result.data, result.data["warnings"]
     if "parsed" in expect:

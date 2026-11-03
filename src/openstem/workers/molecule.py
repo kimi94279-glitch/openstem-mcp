@@ -13,6 +13,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pymupdf
 from rdkit import Chem, rdBase
 from rdkit.Chem import Descriptors, rdChemReactions, rdDepictor, rdMolDescriptors
@@ -173,11 +174,27 @@ def _number_atoms(mol: Chem.Mol) -> Chem.Mol:
     return mol
 
 
+def _coords_finite(mol: Chem.Mol) -> bool:
+    return mol.GetNumAtoms() == 0 or bool(np.isfinite(mol.GetConformer().GetPositions()).all())
+
+
+def ensure_coords(mols: list[Chem.Mol]) -> None:
+    """2D 좌표를 만든다. CoordGen이 NaN 좌표를 내면(RDKit 2026.09의 [H][H]·[H+] 등 수소만 있는 분자)
+    이 요청 동안 RDKit 기본 좌표 생성기로 바꿔 모두 다시 계산한다(DrawReaction도 같은 설정을 쓴다)."""
+    for mol in mols:
+        rdDepictor.Compute2DCoords(mol)
+    if all(_coords_finite(m) for m in mols):
+        return
+    rdDepictor.SetPreferCoordGen(False)
+    for mol in mols:
+        rdDepictor.Compute2DCoords(mol)
+
+
 def _extent(mols: list[Chem.Mol]) -> tuple[float, float]:
     """2D 좌표의 가로·세로 크기를 결합 길이 단위로 더한 값(가로는 합, 세로는 최대)."""
     width = height = 0.0
+    ensure_coords(mols)
     for mol in mols:
-        rdDepictor.Compute2DCoords(mol)
         if mol.GetNumAtoms() == 0:
             continue
         pos = mol.GetConformer().GetPositions()
@@ -204,6 +221,7 @@ def _new_drawer(width_bonds: float, height_bonds: float) -> Any:
 
 
 def draw_molecule(mol: Chem.Mol, numbers: bool) -> str:
+    ensure_coords([mol])
     target = _number_atoms(mol) if numbers else Chem.Mol(mol)
     draw = _new_drawer(*_extent([target]))
     draw.DrawMolecule(target)
@@ -211,6 +229,8 @@ def draw_molecule(mol: Chem.Mol, numbers: bool) -> str:
 
 
 def draw_reaction(reactants: list[Chem.Mol], agents: list[Chem.Mol], products: list[Chem.Mol], numbers: bool) -> str:
+    # 좌표 생성기만 먼저 고른다. 템플릿에는 좌표를 넣지 않는다(좌표가 있는 [H][H] 템플릿은 DrawReaction이 NaN으로 그린다).
+    ensure_coords([Chem.Mol(m) for m in (*reactants, *agents, *products)])
     prep = (lambda m: _number_atoms(m)) if numbers else (lambda m: Chem.Mol(m))
     rxn = rdChemReactions.ChemicalReaction()
     for m in reactants:

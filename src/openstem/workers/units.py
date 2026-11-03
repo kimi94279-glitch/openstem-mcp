@@ -190,6 +190,30 @@ def parse_quantity(where: str, text: str) -> tuple[Any, bool]:
     return q, has_value
 
 
+# ── 회전수(rpm·rps·rev·cycle)와 Hz ─────────────────────────────────
+# pint는 1 rev = 2π rad이고 rad를 1(무차원)로 다룬다. 그래서 60 rpm을 Hz로 바꾸면 6.28 Hz가 나온다(정답 1 Hz).
+# Hz·1/s는 '초당 횟수(회전·주기)'로 읽고, rad가 들어간 단위(rpm·rad/s·deg/s)와 오갈 때 2π를 맞춘다.
+REVOLUTION_UNITS = {"revolutions_per_minute", "revolutions_per_second", "turn"}
+TWO_PI = 2 * math.pi
+CYCLE_NOTE = "Hz (and 1/s) counts cycles per second: 1 Hz = 1 rev/s = 60 rpm = 2π rad/s ≈ 6.283 rad/s."
+
+
+def _radian_power(q: Any) -> float:
+    """뿌리 단위로 풀었을 때 rad의 지수(rpm·rad/s → 1, Hz·1/s → 0)."""
+    return float(dict(UREG.Quantity(1, q.units).to_root_units().unit_items()).get("radian", 0))
+
+
+def _is_revolution(q: Any) -> bool:
+    return any(name in REVOLUTION_UNITS for name, _ in q.unit_items())
+
+
+def as_cycles(q: Any) -> Any:
+    """rad가 든 값을 '회전 수' 기준으로(1 rev = 1): 3000 rpm → 50 1/s, 1 rad/s → 0.159 1/s."""
+    root = q.to_root_units()
+    k = _radian_power(q)
+    return root / UREG.Quantity(TWO_PI, "radian") ** k if k else root
+
+
 def _is_offset(q: Any) -> bool:
     """degC·degF처럼 눈금(0점이 다른) 단위인가. 이런 단위는 곱셈이 정의되지 않는다."""
     import pint
@@ -405,7 +429,33 @@ def _apply(func: Any, nodes: list[Node], unit: Any) -> Any:
     return _safe(run)
 
 
+def _revolution_value(name: str, text: str, q: Any, has_value: bool, has_pi: bool, warnings: list[str]) -> Any:
+    """rpm처럼 회전 수로 준 값을 식에 맞게 읽는다.
+
+    식에 pi가 있으면(P = 2*pi*n*T, omega = 2*pi*f) 2π를 식이 곱하므로 회전 수(1 rev = 1)로 읽고,
+    없으면(P = omega*T) 각속도(1 rev = 2π rad)로 읽는다. 어느 쪽으로 읽었는지 늘 알린다.
+    """
+    cycles, angular = as_cycles(q), q.to_root_units()
+    if has_pi:
+        shown = f" = {quantity_text(cycles)}" if has_value else ""
+        other = f" ({quantity_text(angular)})" if has_value else ""
+        warnings.append(
+            f"units[{name}]: read {text} as revolutions per time{shown} (1 rev = 1) because the formula has pi, as in "
+            f"P = 2*pi*n*T or omega = 2*pi*f. If this variable is already an angular velocity, the formula should not multiply by 2*pi again{other}."
+        )
+        return cycles
+    shown = f" = {quantity_text(angular)}" if has_value else ""
+    other = f" ({quantity_text(cycles)})" if has_value else ""
+    warnings.append(
+        f"units[{name}]: read {text} as an angular quantity{shown} (1 rev = 2π rad), as in P = omega*T. "
+        f"If the formula needs revolutions per time (n in P = 2*pi*n*T), add the 2*pi to the formula or give the value in Hz{other}."
+    )
+    return q
+
+
 def check_expr(payload: dict[str, Any]) -> dict[str, Any]:
+    import sympy
+
     expr_text = payload["expr"]
     try:
         expr = mathexpr.parse(expr_text, None)
@@ -426,8 +476,14 @@ def check_expr(payload: dict[str, Any]) -> dict[str, Any]:
             q = q.to("kelvin")
             if has_value:
                 warnings.append(
-                    f"units[{name}]: converted {text} to absolute temperature {quantity_text(q)}. For a temperature difference use delta_degC (or K)."
+                    f"units[{name}]: read {text} as a temperature reading, i.e. the absolute temperature {quantity_text(q)}. "
+                    f"If it is a temperature change (ΔT, as in Q = m*c*ΔT), write it as delta_degC (e.g. \"10 delta_degC\" = 10 K) or in K; "
+                    "otherwise the result is wrong."
                 )
+        if "ton" in {n for n, _ in q.unit_items()}:
+            warnings.append(f"units[{name}]: ton is the US short ton (907.185 kg); the metric tonne (1000 kg) is t.")
+        if _is_revolution(q) and _radian_power(q):
+            q = _revolution_value(name, text, q, has_value, expr.has(sympy.pi), warnings)
         env[name] = Node(q.units, q if has_value else None)
     if errors:
         raise WorkerError(errors, UNIT_HINT)
@@ -504,6 +560,7 @@ def convert(payload: dict[str, Any]) -> dict[str, Any]:
     q, _ = parse_quantity("value", text)
     to_text = payload.get("to")
     result: dict[str, Any] = {"ok": True, "mode": "convert", "input": text}
+    notes: list[str] = []
     got = dims_of(q.units)
     result["dimension"] = dim_text(got)
     if to_text is not None and to_text.strip():
@@ -520,6 +577,11 @@ def convert(payload: dict[str, Any]) -> dict[str, Any]:
             out = q.to(target.units)
         except pint.PintError as exc:
             raise WorkerError([f"Cannot convert: {str(exc)[:120]}"]) from None
+        a, b = _radian_power(q), _radian_power(target)
+        if a != b and _key(got) == (0, 0, -1, 0, 0, 0, 0):
+            # rpm·rad/s ↔ Hz·1/s: pint는 rad = 1이라 2π가 빠진다. Hz 쪽을 초당 횟수로 보고 2π를 맞춘다.
+            out = out * TWO_PI ** (b - a)
+            notes.append(CYCLE_NOTE)
     else:
         try:
             out = q.to_base_units()
@@ -532,6 +594,18 @@ def convert(payload: dict[str, Any]) -> dict[str, Any]:
     result["result"] = quantity_text(out)
     result["magnitude"] = float(out.magnitude)
     result["unit"] = unit_text(out.units)
+    names = {n for x in (q, out) for n, _ in x.unit_items()}
+    if names & REVOLUTION_UNITS and CYCLE_NOTE not in notes:
+        notes.append(CYCLE_NOTE)
+    if "ton" in names:
+        notes.append("ton is the US short ton (907.185 kg); the metric tonne (1000 kg) is t.")
+    if _is_offset(q):
+        notes.append(
+            f"Converted {text} as a temperature reading. For a temperature change (ΔT) use delta_degC: "
+            f"\"{_num(q.magnitude)} delta_degC\" = {_num(q.magnitude)} K."
+        )
+    if notes:
+        result["note"] = " ".join(notes)
     return result
 
 

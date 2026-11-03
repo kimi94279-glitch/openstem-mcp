@@ -35,39 +35,44 @@
 - 입력: `smiles`(반응식은 `반응물>>생성물`), `kind`(molecule | reaction), `legend`(선택), `show_atom_numbers`(기본 false), `name`
 - 처리: 작업자에서 RDKit 파싱·sanitize → SVG → pymupdf로 PDF 한 쪽(범례 포함) → 변환 작업자로 SVG·PNG
 - 반환: 경로, 미리보기, 분자식·분자량(LLM이 맞는 분자인지 스스로 확인하는 용도). 반응식은 원소 균형 여부를 알린다. 실패하면 어느 원자에서 깨졌는지 보인다.
+- **좌표**: CoordGen을 먼저 쓴다. RDKit 2026.09에서 수소만 있는 분자(`[H][H]`, `[H+]`, `[2H][2H]`)는 CoordGen 좌표가 NaN이라, 그러면 그 요청 동안 RDKit 기본 좌표 생성기로 바꾼다. 반응식 템플릿에는 좌표를 넣지 않는다(좌표가 있는 `[H][H]` 템플릿은 DrawReaction이 NaN으로 그린다).
 
 ## plot_function
 
 - 입력: `series`([{expr: "sin(x)*exp(-x/5)", label?}]), `x_range`, `y_range?`, `title?`, `x_label?`, `y_label?`, `points?`([{x: [], y: [], label?}])
 - 처리: 작업자에서 sympy 파싱 → lambdify → matplotlib. 코드 문자열을 실행하는 방식이 아니다. `x_range`·`y_range`는 `"2*pi"` 같은 상수식 문자열도 받는다(서버는 `mathexpr.check(s, ())`, 변환은 작업자).
 - 반환: svg·png·pdf 경로, 미리보기, 특이점·정의역 밖 구간 경고
-- **특이점**: sympy `singularities`(정확한 값, 4초 안에 못 끝내면 생략)로 후보를 얻고 수치로 종류를 가른다. 발산이면 선을 끊고, 0/0 같은 구멍은 이어 그리고, 양쪽 값이 다른 점프는 끊고 왼쪽→오른쪽 값을 경고한다. 그 밖에 2001점 격자에서 NaN 구간(정의역 밖, 이분법으로 경계를 좁힘)·무한대·큰 값 차이(이분법으로 좁혀도 줄지 않으면 불연속)를 찾는다. 값이 발산하면 y축을 5~95% 분위수 기준으로 자동으로 자른다.
+- **특이점**: sympy `singularities`(정확한 값, 4초 안에 못 끝내면 생략)로 후보를 얻고 수치로 종류를 가른다. 발산이면 선을 끊고, 0/0 같은 구멍은 이어 그리고, 양쪽 값이 다른 점프는 끊고 왼쪽→오른쪽 값을 경고한다. 그 점에서 값이 없고 다가갈수록 |f|가 줄지 않고 커지면(`log(abs(x))`, `abs(x)**(-0.2)`처럼 느린 발산) 구멍이 아니라 발산으로 본다. `sin(1/x)`처럼 끝없이 오르내리며 모이지 않으면 '진동 불연속'으로 알리고 선을 끊는다. 음수 밑의 홀수 분수 거듭제곱(`x**(1/3)`)이 그려지지 않으면 `cbrt`를 안내한다. 그 밖에 2001점 격자에서 NaN 구간(정의역 밖, 이분법으로 경계를 좁힘)·무한대·큰 값 차이(이분법으로 좁혀도 줄지 않으면 불연속)를 찾는다. 값이 발산하면 y축을 5~95% 분위수 기준으로 자동으로 자른다.
 - **PDF**: 작업자가 `plot.pdf`도 저장해 `pdf_path`를 준다. export_document가 SVG 대신 이 PDF를 쓴다(MuPDF가 SVG `clip-path`를 무시해서).
 
 ## verify_math
 
 - 입력: `op`(equal | simplify | solve | diff | integrate | limit | evaluate | ode | matrix | laplace | inverse_laplace | series | sum | probability), `expr`, `against?`, `var?`, `point?`, `latex?`, `bounds?`, `order?`, `assume`(real | positive), `ics?`, `matrix?`, `matrix_b?`, `dist?`
-- 입력 문법: 기본은 sympy 문법(`x**2`, `sqrt(x)`). `mathexpr`의 변수 자동 감지 모드(`variables=None`)를 쓴다. 이름은 영숫자 10자 이하(밑줄·파이썬 예약어·sympy 내부 이름 불가)이고, 늘 괄호 앞에만 나오는 이름(`f(x)`)은 정의 안 된 함수라 거절한다.
+- 입력 문법: 기본은 sympy 문법(`x**2`, `sqrt(x)`). `mathexpr`의 변수 자동 감지 모드(`variables=None`)를 쓴다. 이름은 영숫자 10자 이하(밑줄·파이썬 예약어·sympy 내부 이름 불가)이고, 늘 괄호 앞에만 나오는 이름(`f(x)`)은 정의 안 된 함수라 거절한다. 함수 이름 뒤에 글자 하나(숫자 포함)나 그리스 문자 이름이 붙은 이름(`sinx`, `lnx`, `sqrtx`, `cost`, `sin2x`, `costheta`, `pix`)은 "did you mean sin(x)?"로 거절한다(변수 하나로 읽으면 `diff sinx = 1` 같은 오답이 난다). `10**10**10`, `factorial(10**8)`처럼 숫자만으로 된 거대한 수는 서버에서 계산 전에 거절한다(결과 100만 자리, factorial 인수 10만 초과).
 - 반환: 결과(평문 + LaTeX). `equal`이면 `matches`(true | false | unknown)와 수치 비교 결과.
-- **판정 순서(equal)**: 무작위 점 5개 수치 비교를 먼저 한다. 반례가 있으면 바로 false(상수 차이면 적분상수라고 알린다). 반례가 없을 때만 `simplify(a-b)==0` → `a.equals(b)` 순서로 기호 판정한다. 반례가 이미 있으면 뒤따르는 기호 계산은 `Budget.run(cap=…)`으로 2~3초만 쓴다.
+- **판정 순서(equal)**: 무작위 점 8개 수치 비교를 먼저 한다(시드 고정. 크기를 0.1~3, 3~10, 10~50으로 돌아가며 뽑아 `Min(x, 3)`과 `x`처럼 |x|>3에서만 다른 식도 잡는다). 반례가 있으면 바로 false(상수 차이면 적분상수라고 알린다). 반례가 없을 때만 `simplify(a-b)==0` → `a.equals(b)` 순서로 기호 판정한다. `equals()`는 복소수 점으로도 비교해서 실수 항등식(`abs(x-1)+abs(x+1)` = `2*Max(1, abs(x))`)에 False를 내므로, `equals()`가 False여도 실수 점에서 반례가 없고 정의역 차이도 없으면 unknown으로 두고 "numerically equal at all N points sampled in [범위]"를 붙인다. 두 식을 함께 계산할 실수 점이 하나도 없으면(`-log(sin(x)-1)/2 + …`) unknown으로 두고 log를 ln|…|로 읽어 다시 비교한 결과를 알린다. 반례가 이미 있으면 뒤따르는 기호 계산은 `Budget.run(cap=…)`으로 2~3초만 쓴다.
 - **시간 예산**: 기호 계산은 작업자 안에서 `Budget`(12초) 스레드로 돌려 시간이 넘으면 끊는다.
+- **시간 초과 안내**(verify_math·check_units·plot_function·plot_data 공통): 작업자가 준비 신호를 보내기 전(라이브러리 읽기)의 시간 초과에만 "처음 실행이면 한 번 더"를 붙인다. 준비 신호 뒤의 시간 초과는 입력이 무거운 것이라 그렇게 말한다(sandbox의 `Worker startup …` 메시지로 가른다).
 - **변수와 가정**: 변수는 실수로 본다(`sqrt(x**2)` → `Abs(x)`). `assume="positive"`면 변수를 모두 양수로 본다(물리량: `sqrt(m**2*v**2)=m*v`). equal이 false(반례 없음)나 unknown이면 양수 가정으로 다시 보고 "변수가 모두 양수면 같다"고 알린다.
 - **수치**: 소수는 비교 전에 유리수로 바꾼다(`0.1x+0.2x = 0.3x`). 허용 오차는 상대 오차이고, 아주 작은 값 근처만 절대 하한을 둔다. 변수 없는 equal은 적분상수 대신 라디안 안내를 붙인다.
-- **solve**: `solveset`(실수)으로 푼다. 해가 없으면 복소수 해, 주기 해면 일반해 + [-2π, 2π] 안의 해, 못 풀면 [-10, 10] 수치 근을 준다. 다른 문자가 남으면 `sp.solve`로 해 목록을 주고("다른 문자 값에 따라 실수일 때의 해") 수치 근 찾기는 하지 않는다. Intersection·ConditionSet은 풀어 쓰고, "n은 정수"는 진짜 ImageSet일 때만 말한다.
-- **적분**: 부정적분의 log는 ln|x|로 읽으라고 알리고, 발산하는 정적분은 "발산"이라고 답한다.
-- **LaTeX 입력**(`latex=true`): 선택 의존성 `antlr4-python3-runtime==4.11.*`(extra `latex`, dev 그룹에도 있다)이 있어야 한다. 읽은 뒤 `e`·`\pi`를 상수로 바꾸고 `doit()`한다. 정의 안 된 함수(`a*b*s(x)`처럼 sympy 문법을 LaTeX로 잘못 읽은 흔적)가 나오면 거절하고, integrate·diff·limit에 `\int`·`\lim`·`\frac{d`가 든 입력도 거절한다.
+- **solve**: `solveset`(실수)으로 푼다. 해가 없으면 복소수 해, 주기 해면 일반해 + [-2π, 2π] 안의 해, 못 풀면 [-10, 10] 수치 근을 준다. sympy가 낸 해는 모두 원식(좌변 - 우변)에 다시 넣어, 어느 부분식이라도 실수 값이 없거나(`log(-3)`) 양변이 다르면 버리고 "dropped x = -2 (log(x) has no real value there)"로 알린다(`log(x-1)+log(x+1)=log(3)`의 -2). 주기 해의 [-2π, 2π] 목록과 연립방정식 해도 같다. 다른 문자가 남으면 `sp.solve`로 해 목록을 주고("다른 문자 값에 따라 실수일 때의 해") 수치 근 찾기는 하지 않는다. Intersection·ConditionSet은 풀어 쓰고, "n은 정수"는 진짜 ImageSet일 때만 말한다.
+- **적분**: 부정적분의 log는 ln|x|로 읽으라고 알리고, 발산하는 정적분은 "발산"이라고 답한다. 진동해서 값이 없는 정적분(`sin(x)`, [0, oo] → AccumBounds)은 "diverges (oscillates)"로 답한다.
+- **음수의 분수 거듭제곱**: sympy는 `(-8)**(1/3)`, `x**(1/3)`을 복소수 주가지로 계산한다. evaluate 결과가 실수가 아니거나 integrate 식에 이런 거듭제곱이 있으면 note로 알리고 `cbrt(x)`(실수 세제곱근)를 안내한다.
+- **LaTeX 입력**(`latex=true`): 선택 의존성 `antlr4-python3-runtime==4.11.*`(extra `latex`, dev 그룹에도 있다)이 있어야 한다. 읽은 뒤 `e`·`\pi`를 상수로 바꾸고 `doit()`한다. 정의 안 된 함수(`a*b*s(x)`처럼 sympy 문법을 LaTeX로 잘못 읽은 흔적)가 나오면 거절하고, integrate·diff·limit에 `\int`·`\lim`·`\frac{d`가 든 입력도 거절한다. 근호 `\sqrt[n]{…}`는 실수근이라 홀수 n이면 `real_root`로 읽는다(`\sqrt[3]{-8}` = -2). parse_latex가 근호만 지수를 `Rational(1, n)`으로 남기므로 `x^{1/3}`(거듭제곱)과 구별된다.
 
 ## check_units
 
 - pint로 차원 분석을 한다. 식의 결과 단위가 기대 단위와 같은지(`expr`, `units` 변수별 단위, `expect`) 보고, 어긋나면 어느 차원이 다른지 설명한다. 값 변환도 한다(`value` "72 km/h", `to` "m/s", 비우면 SI).
 - 덧셈 항의 차원이 다르거나 sin·exp·log 안에 차원이 있으면 알린다.
 - 단위 문자열은 서버에서 글자 허용 목록·길이(단위 60자, 값 80자)로 거르고, 해석은 작업자에서 pint가 한다.
+- **회전수와 Hz**: pint는 1 rev = 2π rad이고 rad를 무차원 1로 다뤄 `60 rpm → Hz`가 6.28이 된다. 변환에서 한쪽만 rad가 든 단위(rpm·rps·rev·rad/s·deg/s)이고 다른 쪽이 Hz·1/s면 Hz를 초당 횟수로 보고 2π를 맞춘다(60 rpm = 1 Hz, 1 rad/s = 0.159 Hz). 식 검사에서 rpm 같은 회전 단위 값은 식에 pi가 있으면(P = 2πnT) 회전 수(3000 rpm = 50 1/s)로, 없으면(P = ωT) 각속도(314.159 rad/s)로 읽고 어느 쪽으로 읽었는지 늘 알린다.
+- **안내**: `ton`은 미국 쇼트톤(907.185 kg)이라 메트릭 톤 `t`와 다름을 알린다. `degC` 값은 온도 눈금(절대온도)으로 읽으므로, 온도 차(ΔT)는 `delta_degC`로 쓰라고 알린다.
 
 ## plot_data
 
 - 입력: `series`([{x, y, yerr?, xerr?, label?, fit?}]) 또는 `table`(CSV·탭·마크다운 표 텍스트, 열 이름으로 고름), `fit`(none | linear | poly2 | poly3 | exponential | power | log), 축 이름·제목, 로그 축
 - 처리: scipy 없이 numpy `polyfit(cov=True)`로 맞춘다(오차 막대가 있으면 1/σ² 가중). 지수·거듭제곱은 로그를 씌워 직선으로 맞춘다(0 이하 데이터는 거절). 그리기는 작업자 안에서 matplotlib.
-- 반환: svg·png·pdf 경로, 미리보기, 맞춤 식(± 표준오차), R², 경고(점이 모자람, 3σ 밖 점)
+- 반환: svg·png·pdf 경로, 미리보기, 맞춤 식(± 표준오차), R², 경고(점이 모자람, 3σ 밖 점). `fit.note`에 가중 맞춤의 표준오차가 √χ²_red로 조정된 값이라는 것과, 지수·거듭제곱 맞춤은 ln y 직선 맞춤이며 R²는 원래 y로 계산했다는 것을 적는다.
 - `workers/plot.py`의 비공개 도우미를 같이 쓰니 이름을 바꿀 때 함께 고친다.
 
 ## read_document

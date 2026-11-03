@@ -16,6 +16,8 @@ MAX_SMILES = 2000
 MAX_LEGEND = 200
 
 TIMEOUT_HINT = "Timed out ({timeout:.0f} s): the molecule is too large or complex. Split it into smaller parts and call again."
+# 작업자가 준비 신호를 보내기 전(라이브러리 읽기)에 시간이 넘은 경우만 "다시 해 보라"고 한다. 그 뒤의 시간 초과는 입력이 무거운 것이다.
+STARTUP_HINT = "On a first run loading the libraries can be slow; try once more."
 
 DESCRIPTION = r"""Draw a molecule or reaction from SMILES (not a name): SVG/PDF/PNG, preview, formula, molecular weight. Reaction: reactants>>products.
 Example: {"smiles": "CC(=O)Oc1ccccc1C(=O)O", "legend": "aspirin"}
@@ -52,7 +54,9 @@ def render_molecule(
         try:
             result = sandbox.run_python("openstem.workers.molecule", payload, Path(tmp), timeout)
         except sandbox.WorkerFailed as exc:
-            message = TIMEOUT_HINT.format(timeout=timeout) if exc.timed_out else str(exc)
+            message = str(exc) if not exc.timed_out else (
+                f"{exc} {STARTUP_HINT}" if str(exc).startswith("Worker startup") else TIMEOUT_HINT.format(timeout=timeout)
+            )
             return ToolResult.failure([message])
         if not result.get("ok"):
             return ToolResult.failure(result.get("errors") or ["Unknown failure"], result.get("hint"))

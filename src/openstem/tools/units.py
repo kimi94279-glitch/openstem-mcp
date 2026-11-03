@@ -18,12 +18,15 @@ UNIT_RE = re.compile(r"^[A-Za-z0-9 _.*/^()+\-%°µμΩÅ²³¹⁰⁴⁵⁶⁷⁸
 UNIT_CHARS = "letters, digits, space and * / ^ ( ) . - + _ % ° µ Ω Å ² ³ ·"
 
 INPUT_HINT = 'Fix the input and call again. Units e.g. m, s, kg, N, J, km/h, m/s^2, kg*m^2, degC; dimensionless is "1"'
-TIMEOUT_HINT = "Timed out ({timeout:.0f} s). Simplify the expression or units and call again. On a first run, try once more."
+TIMEOUT_HINT = "Timed out ({timeout:.0f} s) while computing: the input is too heavy (huge powers or factorials). Simplify the expression or units and call again."
+# 작업자가 준비 신호를 보내기 전(라이브러리 읽기)에 시간이 넘은 경우만 "다시 해 보라"고 한다. 그 뒤의 시간 초과는 입력이 무거운 것이다.
+STARTUP_HINT = "On a first run loading the libraries can be slow; try once more."
 
 DESCRIPTION = r"""Check the units (dimensions) of a physics/engineering formula, or convert a value.
 Check: {"expr": "sqrt(2*h/g)", "units": {"h": "m", "g": "m/s^2"}, "expect": "s"} → matches; otherwise explanation says which dimensions differ. Units with values ("20 m") also give the numeric result.
 Convert: {"value": "72 km/h", "to": "m/s"}
 Use unit symbols (m, kg, N, J, km/h, m/s^2; dimensionless "1").
+Rotation: Hz counts cycles (60 rpm = 1 Hz = 2π rad/s). Temperature changes: delta_degC. ton is the US short ton; metric tonne is t. Read note and warnings.
 On failure: errors name the bad input; fix it and call again."""
 
 
@@ -103,7 +106,9 @@ def check_units(
         try:
             result = sandbox.run_python("openstem.workers.units", payload, Path(tmp), timeout)
         except sandbox.WorkerFailed as exc:
-            message = TIMEOUT_HINT.format(timeout=timeout) if exc.timed_out else str(exc)
+            message = str(exc) if not exc.timed_out else (
+                f"{exc} {STARTUP_HINT}" if str(exc).startswith("Worker startup") else TIMEOUT_HINT.format(timeout=timeout)
+            )
             return ToolResult.failure([message])
     if not result.get("ok"):
         return ToolResult.failure(result.get("errors") or ["unknown failure"], result.get("hint"))

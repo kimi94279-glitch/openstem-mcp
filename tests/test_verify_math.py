@@ -54,3 +54,32 @@ def test_verify_math_case(case):
         assert fragment not in dumped, dumped
     if not result.ok:
         assert len(data["errors"]) <= 10
+
+
+@pytest.mark.parametrize(
+    ("message", "fragment", "absent"),
+    [
+        ("Timed out (20 s)", "while computing", "try once more"),
+        ("Worker startup (loading libraries) did not finish within 60 s.", "try once more", "while computing"),
+    ],
+)
+def test_timeout_hint_depends_on_when_it_timed_out(monkeypatch, message, fragment, absent):
+    """준비 신호 뒤의 시간 초과는 입력이 무거운 것이다. '다시 해 보라'는 라이브러리 읽기 중 시간 초과에만."""
+    from openstem import sandbox
+    from openstem.tools.plot import plot_function
+    from openstem.tools.plotdata import plot_data
+    from openstem.tools.units import check_units
+
+    def fail(*args, **kwargs):
+        raise sandbox.WorkerFailed(message, timed_out=True)
+
+    monkeypatch.setattr(sandbox, "run_python", fail)
+    results = [
+        verify_math(op="evaluate", expr="2**100"),
+        check_units(value="1 m", to="cm"),
+        plot_function(series=[{"expr": "x"}], x_range=[0, 1]),
+        plot_data(series=[{"x": [1, 2, 3], "y": [1, 2, 3]}]),
+    ]
+    for result in results:
+        text = " ".join(result.data["errors"])
+        assert not result.ok and fragment in text and absent not in text, text

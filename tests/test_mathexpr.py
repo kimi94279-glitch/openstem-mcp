@@ -39,7 +39,7 @@ def test_check_accepts(expr):
         ("open", "Unknown name 'open'"),
         ("y + 1", "Variable 'y'"),
         ("xx", "x*x"),
-        ("sinx", "Unknown name 'sinx'"),
+        ("sinx", "Did you mean sin(x)?"),
         ("sqrt(x", "not closed"),
         ("x)", "matching '('"),
         ("y = x", "'='"),
@@ -229,3 +229,31 @@ def test_matrix_parts():
 
 def test_factorial_is_allowed():
     assert check("x**n/factorial(n)", None) == []
+
+
+@pytest.mark.parametrize(
+    ("name", "meant"),
+    [
+        ("sinx", "sin(x)"),
+        ("cosx", "cos(x)"),
+        ("lnx", "ln(x)"),
+        ("sqrtx", "sqrt(x)"),
+        ("tanx", "tan(x)"),
+        ("expx", "exp(x)"),
+        ("sin2x", "sin(2*x)"),
+        ("costheta", "cos(theta)"),
+        ("log10x", "log10(x)"),
+        ("coshx", "cosh(x)"),
+        ("pix", "pi*x"),
+    ],
+)
+def test_function_name_glued_to_argument_is_rejected(name, meant):
+    """diff("sinx")가 sinx를 변수 하나로 읽어 1을 내던 오답(감사 2026-11-03)."""
+    for errors in (check(name, None), check(f"{name} + 1", ("x",))):
+        assert any(f"Did you mean {meant}?" in e for e in errors), errors
+    assert f"Did you mean {meant}?" in (variable_name_error(name) or "")
+
+
+@pytest.mark.parametrize("name", ["signal", "expect", "Emax", "theta", "pitch", "v0", "omega2", "lambda1"])
+def test_names_merely_starting_like_a_function_are_variables(name):
+    assert check(f"{name} + 1", None) == []

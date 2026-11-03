@@ -1,6 +1,6 @@
 # plot_function 입력 → 기대 결과
 # expect.ok: 성공 여부 / parsed: series[].parsed (순서대로) / warnings_contain: warnings를 합친 문자열에 들어 있어야 할 조각
-# errors_contain: errors를 합친 문자열에 들어 있어야 할 조각 / no_warnings: 경고 없음
+# errors_contain: errors를 합친 문자열에 들어 있어야 할 조각 / no_warnings: 경고 없음 / warnings_exclude: warnings에 없어야 할 조각
 
 - id: damped-oscillation-hangul-labels
   input:
@@ -170,3 +170,32 @@
     x_range: [0, 1]
     points: [{x: [0, 1], y: [0]}]
   expect: {ok: false, errors_contain: ["lengths differ"]}
+
+# ── 감사 2026-11-03: 느리게 발산하는 로그·거듭제곱 점근선은 '구멍'이 아니라 발산이다 ──
+- id: log-abs-asymptote-not-hole
+  input: {series: [{expr: "log(abs(x))"}], x_range: [-2, 2]}
+  expect: {ok: true, warnings_contain: ["diverges at x = 0"], warnings_exclude: ["single point"]}
+
+- id: log-square-asymptote
+  input: {series: [{expr: "log(x**2)"}], x_range: [-2, 2]}
+  expect: {ok: true, warnings_contain: ["diverges at x = 0"], warnings_exclude: ["single point"]}
+
+- id: shifted-log-abs-asymptote
+  input: {series: [{expr: "log(abs(x - 1))"}], x_range: [-1, 3]}
+  expect: {ok: true, warnings_contain: ["diverges at x = 1"], warnings_exclude: ["single point"]}
+
+- id: weak-power-asymptote
+  input: {series: [{expr: "abs(x)**(-0.2)"}], x_range: [-2, 2]}
+  expect: {ok: true, warnings_contain: ["diverges at x = 0"], warnings_exclude: ["single point"]}
+
+- id: removable-hole-still-a-hole
+  input: {series: [{expr: "x*log(abs(x))"}], x_range: [-2, 2]}
+  expect: {ok: true, warnings_contain: ["single point x = 0"], warnings_exclude: ["diverges"]}
+
+- id: sin-reciprocal-oscillates
+  input: {series: [{expr: "sin(1/x)"}], x_range: [-1, 1]}
+  expect: {ok: true, warnings_contain: ["oscillates infinitely often near x = 0"], warnings_exclude: ["jumps"]}
+
+- id: cube-root-power-gap-hints-cbrt
+  input: {series: [{expr: "x**(1/3)"}], x_range: [-2, 2]}
+  expect: {ok: true, warnings_contain: ["no real values", "cbrt"]}

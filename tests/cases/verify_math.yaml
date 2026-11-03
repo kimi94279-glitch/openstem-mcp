@@ -594,3 +594,104 @@
 - id: error-probability-absolute-value-event
   input: {op: probability, dist: "Normal(0, 1)", expr: "abs(X) < 1.96"}
   expect: {ok: false, errors_contain: ["could not compute the probability"]}
+
+# ── 감사 2026-11-03: 학생이 틀린 것을 맞다고 믿게 되는 오답 ──────────────
+# solve: solveset이 낸 근을 원식에 다시 넣어 실수에서 정의되지 않으면 버린다
+- id: solve-log-sum-drops-extraneous-root
+  input: {op: solve, expr: "log(x - 1) + log(x + 1) = log(3)"}
+  expect: {ok: true, solutions: ["2"], contains: ["dropped x = -2", "extraneous"]}
+
+- id: solve-log-product-drops-negative-root
+  input: {op: solve, expr: "log(x) + log(x - 3) = log(10)"}
+  expect: {ok: true, solutions: ["5"], contains: ["dropped x = -2"]}
+
+- id: solve-log-two-log-two
+  input: {op: solve, expr: "log(x - 2) + log(x + 1) = 2*log(2)"}
+  expect: {ok: true, solutions: ["3"], contains: ["dropped x = -2"]}
+
+- id: solve-all-roots-extraneous
+  input: {op: solve, expr: "log(x - 5) = log(-x)"}
+  expect: {ok: true, solutions: [], contains: ["No real solutions"]}
+
+- id: solve-plain-roots-kept
+  input: {op: solve, expr: "x**2 = 4"}
+  expect: {ok: true, solutions: ["-2", "2"], excludes: ["dropped"]}
+
+# equal: sympy equals()가 복소수 점으로 False를 내도 실수에서 반례가 없으면 unknown
+- id: equal-abs-sum-vs-max-unknown-not-false
+  input: {op: equal, expr: "abs(x - 1) + abs(x + 1)", against: "2*Max(1, abs(x))"}
+  expect: {ok: true, matches: unknown, contains: ["numerically equal at all 8 points sampled in ["]}
+
+- id: equal-floor-identity-not-false
+  input: {op: equal, expr: "floor(x/2) + floor((x + 1)/2)", against: "floor(x)"}
+  expect: {ok: true, matches: unknown}
+
+- id: equal-atan-reciprocal-not-false
+  input: {op: equal, expr: "atan(x) + atan(1/x)", against: "pi/2*sign(x)"}
+  expect: {ok: true, matches: unknown}
+
+- id: equal-sec-antiderivative-not-false
+  input: {op: equal, expr: "-log(sin(x) - 1)/2 + log(sin(x) + 1)/2", against: "log(abs(sec(x) + tan(x)))"}
+  expect: {ok: true, matches: unknown, contains: ["ln|…|"]}
+
+# equal: 비교 점을 ±50까지 넓혀 |x| > 3에서만 다른 식을 잡는다
+- id: equal-min-differs-beyond-three
+  input: {op: equal, expr: "Min(x, 3)", against: "x"}
+  expect: {ok: true, matches: false, contains: ["counterexample"]}
+
+- id: equal-acos-cos-differs-beyond-pi
+  input: {op: equal, expr: "acos(cos(x))", against: "abs(x)"}
+  expect: {ok: true, matches: false}
+
+- id: equal-heaviside-differs-beyond-two-and-half
+  input: {op: equal, expr: "x + Heaviside(x - 2.5)", against: "x"}
+  expect: {ok: true, matches: false}
+
+# LaTeX 근호는 실수근
+- id: latex-cube-root-of-negative-is-real
+  input: {op: evaluate, expr: '\sqrt[3]{-8}', latex: true}
+  expect: {ok: true, result: "-2"}
+
+- id: latex-fifth-root-of-negative
+  input: {op: evaluate, expr: '\sqrt[5]{-32}', latex: true}
+  expect: {ok: true, result: "-2"}
+
+- id: latex-power-one-third-stays-principal
+  input: {op: evaluate, expr: '(-8)^{1/3}', latex: true}
+  expect: {ok: true, contains: ["principal complex root", "cbrt"]}
+
+# 음수 밑의 분수 거듭제곱: 복소수 주가지라고 알린다
+- id: evaluate-negative-cube-root-power-notes-principal-branch
+  input: {op: evaluate, expr: "(-8)**(1/3)"}
+  expect: {ok: true, contains: ["principal complex root", "cbrt"]}
+
+- id: integrate-cube-root-power-notes-principal-branch
+  input: {op: integrate, expr: "x**(1/3)"}
+  expect: {ok: true, contains: ["principal complex root", "cbrt(x)"]}
+
+- id: evaluate-two-thirds-power-suggests-squared-cbrt
+  input: {op: evaluate, expr: "x**(2/3)", point: "x=-8"}
+  expect: {ok: true, contains: ["cbrt(x)**2"]}
+
+# 진동하는 정적분
+- id: integrate-sin-to-infinity-oscillates
+  input: {op: integrate, expr: "sin(x)", bounds: [0, "oo"]}
+  expect: {ok: true, result: "diverges (oscillates)", excludes: ["AccumBounds"]}
+
+# 함수 이름에 인수가 붙은 이름
+- id: diff-sinx-rejected
+  input: {op: diff, expr: "sinx"}
+  expect: {ok: false, errors_contain: ["Did you mean sin(x)?"]}
+
+- id: integrate-lnx-rejected
+  input: {op: integrate, expr: "lnx"}
+  expect: {ok: false, errors_contain: ["Did you mean ln(x)?"]}
+
+# 계산 전에 거절하는 거대한 수
+- id: huge-power-tower-rejected
+  input: {op: evaluate, expr: "10**10**10"}
+  expect: {ok: false, errors_contain: ["far too large"]}
+
+- id: huge-factorial-rejected
+  input: {op: evaluate, expr: "factorial(10**8)"}
+  expect: {ok: false, errors_contain: ["far too large"]}

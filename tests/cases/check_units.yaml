@@ -109,3 +109,56 @@
 - id: expect-must-not-have-number
   input: {expr: "h", units: {h: m}, expect: "2 m"}
   expect: {ok: false, errors_contain: ["only a unit, no number"]}
+
+# ── 회전수·Hz(감사 2026-11-03): pint는 1 rev = 2π rad, rad = 1이라 rpm → Hz에서 2π가 빠졌다 ──
+- id: rpm-to-hz
+  input: {value: "60 rpm", to: Hz}
+  expect: {ok: true, approx: 1.0, contains: ["1 Hz = 1 rev/s = 60 rpm"]}
+
+- id: hz-to-rpm
+  input: {value: "1 Hz", to: rpm}
+  expect: {ok: true, approx: 60.0}
+
+- id: rad-per-second-to-hz
+  input: {value: "1 rad/s", to: Hz}
+  expect: {ok: true, approx: 0.15915494309189535}
+
+- id: hz-to-rad-per-second
+  input: {value: "50 Hz", to: "rad/s"}
+  expect: {ok: true, approx: 314.1592653589793}
+
+- id: rpm-to-rad-per-second-unchanged
+  input: {value: "3000 rpm", to: "rad/s"}
+  expect: {ok: true, approx: 314.1592653589793}
+
+- id: rps-to-inverse-seconds
+  input: {value: "2 rps", to: "1/s"}
+  expect: {ok: true, approx: 2.0}
+
+- id: power-from-rpm-with-two-pi
+  input: {expr: "2*pi*n*T", units: {n: "3000 rpm", T: "10 N*m"}, expect: W}
+  expect: {ok: true, matches: true, approx: 3141.592653589793, contains: ["revolutions per time = 50 1/s"]}
+
+- id: power-from-rpm-as-angular-velocity
+  input: {expr: "w*T", units: {w: "3000 rpm", T: "10 N*m"}, expect: W}
+  expect: {ok: true, matches: true, approx: 3141.592653589793, contains: ["angular quantity = 314.159 rad/s"]}
+
+- id: short-ton-note
+  input: {value: "5 ton", to: kg}
+  expect: {ok: true, approx: 4535.9237, contains: ["US short ton", "metric tonne (1000 kg) is t"]}
+
+- id: metric-tonne
+  input: {value: "5 t", to: kg}
+  expect: {ok: true, approx: 5000.0, excludes: ["short ton"]}
+
+- id: degc-conversion-mentions-delta
+  input: {value: "10 degC", to: K}
+  expect: {ok: true, approx: 283.15, contains: ["delta_degC"]}
+
+- id: degc-in-formula-warns-temperature-change
+  input: {expr: "m*c*dT", units: {m: "1 kg", c: "4186 J/(kg*K)", dT: "10 degC"}}
+  expect: {ok: true, contains: ["10 delta_degC", "temperature change"]}
+
+- id: huge-power-tower-rejected-before-worker
+  input: {expr: "x*10**10**10", units: {x: m}}
+  expect: {ok: false, errors_contain: ["far too large"]}

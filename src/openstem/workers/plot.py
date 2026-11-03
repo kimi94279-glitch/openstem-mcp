@@ -83,6 +83,7 @@ class Series:
     singular: list[str] = field(default_factory=list)
     jumps: list[str] = field(default_factory=list)
     holes: list[str] = field(default_factory=list)
+    oscillations: list[str] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
     overflow: list[str] = field(default_factory=list)
 
@@ -94,13 +95,32 @@ class Series:
             out.append(
                 f"{self.name}: jumps at x = {_listing(self.jumps)} (discontinuity; parentheses show left → right values); line broken."
             )
+        if self.oscillations:
+            out.append(
+                f"{self.name}: oscillates infinitely often near x = {_listing(self.oscillations)} and has no limit there "
+                "(oscillating discontinuity); line broken, and the curve near that point only shows samples."
+            )
         if self.holes:
             out.append(f"{self.name}: undefined at the single point x = {_listing(self.holes)} (curve drawn through).")
         if self.gaps:
-            out.append(f"{self.name}: no real values for {_listing(self.gaps)}; not drawn.")
+            out.append(f"{self.name}: no real values for {_listing(self.gaps)}; not drawn.{_odd_root_hint(self.expr)}")
         if self.overflow:
             out.append(f"{self.name}: values too large for {_listing(self.overflow)}; not drawn.")
         return out
+
+
+def _odd_root_hint(expr: Any) -> str:
+    """x**(1/3)는 음수 x에서 복소수 주가지라 그려지지 않는다. 실수 세제곱근 쓰는 법을 알린다."""
+    import sympy
+
+    if not isinstance(expr, sympy.Basic):
+        return ""
+    for pw in expr.atoms(sympy.Pow):
+        exp = pw.exp
+        if exp.is_Rational and exp.q > 1 and exp.q % 2 == 1 and pw.base.is_nonnegative is not True:
+            real = "cbrt(…)" if exp.q == 3 else f"sign(…)*abs(…)**({exp.p}/{exp.q})"
+            return f" ({pw} is the principal complex root for a negative base; for the real root write {real}.)"
+    return ""
 
 
 # ── 계산 ────────────────────────────────────────────────────────────
@@ -187,8 +207,35 @@ def _side_values(func: Any, s: float, scale: float) -> tuple[float, float] | Non
     return left, right
 
 
+def _grows_without_bound(func: Any, s: float, sign: int, scale: float) -> bool:
+    """s로 다가갈수록 |f|가 줄지 않고 계속 커지는가(log|x|, |x|**-0.2처럼 느리게 발산하는 곳).
+
+    100배 비교만으로는 log(abs(x))의 0(1e-4에서 9.2, 1e-10에서 23)을 놓친다. 거리를 100배씩 줄이며
+    |f|가 늘 커지고, 늘어나는 폭이 줄어들지 않으면 발산으로 본다(sin(x)/x처럼 값이 모이는 곳은 폭이 0으로 준다).
+    """
+    values = [abs(_at(func, s + sign * d * scale)) for d in (1e-3, 1e-5, 1e-7, 1e-9)]
+    if not all(np.isfinite(values)):
+        return False
+    steps = np.diff(values)
+    return bool((steps > 0).all() and steps[-1] >= 0.5 * steps[0] and values[-1] > 1.5 * max(values[0], 1.0))
+
+
+def _oscillates(func: Any, s: float, scale: float) -> bool:
+    """s 가까이에서 값이 끝없이 오르내리며 모이지 않는가(sin(1/x)의 0). x*sin(1/x)처럼 폭이 0으로 줄면 아니다."""
+    d = np.logspace(-9, -3, 240) * scale
+    for sign in (-1, 1):
+        ys = _evaluate(func, s + sign * d)
+        if not np.isfinite(ys).all():
+            return False
+        turns = int(np.count_nonzero(np.diff(np.sign(np.diff(ys)))))
+        near = ys[: len(ys) // 2]
+        if turns < 20 or np.ptp(near) < 0.1 * max(1.0, float(np.max(np.abs(near)))):
+            return False
+    return True
+
+
 def _classify_point(func: Any, s: float) -> tuple[str | None, tuple[float, float] | None]:
-    """특이점 후보 s의 종류: diverge | jump | hole | None(정의역 경계 등, 따로 보고됨).
+    """특이점 후보 s의 종류: diverge | oscillate | jump | hole | None(정의역 경계 등, 따로 보고됨).
 
     jump(abs(x)/x의 0)이면 (왼쪽 값, 오른쪽 값)도 돌려준다.
     hole(sin(x)/x의 0)은 좌우 값이 같은 곳으로 모이는데 그 한 점에서만 값이 없는 곳이다.
@@ -201,12 +248,16 @@ def _classify_point(func: Any, s: float) -> tuple[str | None, tuple[float, float
             sides.append("undefined")
         elif np.isinf(near) or abs(near) > 100 * max(abs(far), 1e-300):
             sides.append("diverge")
+        elif not np.isfinite(_at(func, s)) and _grows_without_bound(func, s, sign, scale):
+            sides.append("diverge")
         else:
             sides.append("bounded")
     if "diverge" in sides:
         return "diverge", None
     if sides != ["bounded", "bounded"]:
         return None, None
+    if _oscillates(func, s, scale):
+        return "oscillate", None
     if (values := _side_values(func, s, scale)) is not None:
         return "jump", values
     if not np.isfinite(_at(func, s)):
@@ -221,6 +272,9 @@ def _record(s: Series, kind: str, label: str, v: float, values: tuple[float, flo
         s.breaks.append(v)
     elif kind == "jump" and values is not None:
         s.jumps.append(_jump_text(label, *values))
+        s.breaks.append(v)
+    elif kind == "oscillate":
+        s.oscillations.append(label)
         s.breaks.append(v)
     else:
         s.holes.append(label)

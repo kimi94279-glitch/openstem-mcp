@@ -65,3 +65,32 @@
 - id: empty-smiles
   input: {smiles: "  "}
   expect: {ok: false, errors_contain: ["is empty"]}
+
+# 수소만 있는 분자: CoordGen이 NaN 좌표를 내면 RDKit 기본 좌표로 다시 계산한다
+- id: hydrogen-molecule-explicit
+  input: {smiles: "[H][H]"}
+  expect: {ok: true}
+
+- id: hydrogen-molecule-bracket
+  input: {smiles: "[HH]"}
+  expect: {ok: true}
+
+- id: proton
+  input: {smiles: "[H+]"}
+  expect: {ok: true}
+
+- id: hydride
+  input: {smiles: "[H-]"}
+  expect: {ok: true}
+
+- id: deuterium-molecule
+  input: {smiles: "[2H][2H]"}
+  expect: {ok: true}
+
+- id: hydrogen-only-reaction
+  input: {smiles: "[H+].[H-]>>[H][H]", kind: reaction}
+  expect: {ok: true, balanced: true}
+
+- id: hydrogen-combustion-balanced
+  input: {smiles: "[H][H].[H][H].O=O>>O.O", kind: reaction}
+  expect: {ok: true, balanced: true}
