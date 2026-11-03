@@ -77,6 +77,7 @@ NAMED: dict[tuple[int, ...], tuple[str, str | None]] = {
 # 값이 붙은 단위 문자열: 숫자로 시작한다("20 m", "9.8 m/s^2"). 단 "1"과 "1/s"는 단위만 쓴 것으로 본다.
 _STARTS_WITH_NUMBER = re.compile(r"^\s*[-+]?(?:[0-9]|\.[0-9])")
 _UNIT_ONLY = re.compile(r"^\s*1\s*(?:/|$)")
+_LEADING_NUMBER = re.compile(r"^\s*([-+]?(?:[0-9]+\.?[0-9]*|\.[0-9]+)(?:[eE][-+]?[0-9]+)?)\s*\*?\s*(.*)$")
 
 
 # ── 차원 글 ─────────────────────────────────────────────────────────
@@ -171,7 +172,15 @@ def parse_quantity(where: str, text: str) -> tuple[Any, bool]:
     if s in ("", "1", "dimensionless"):
         return UREG.Quantity(1, "dimensionless"), False
     try:
-        q = UREG.parse_expression(s)
+        try:
+            q = UREG.parse_expression(s)
+        except pint.OffsetUnitCalculusError:
+            # pint 0.25(Python 3.11용 잠금 버전)는 "25 degC"를 25 * degC 곱셈으로 읽어 거절한다.
+            # 0.26처럼 숫자와 단위를 나눠 Quantity(25, "degC")로 만든다.
+            m = _LEADING_NUMBER.match(s)
+            if not m or not m.group(2).strip():
+                raise
+            q = UREG.Quantity(float(m.group(1)), m.group(2).strip())
     except pint.UndefinedUnitError as exc:
         names = ", ".join(f"'{n}'" for n in getattr(exc, "unit_names", ()) or ()) or "?"
         raise WorkerError([f"{where} '{text}': unknown unit {names}."], UNIT_HINT) from None
