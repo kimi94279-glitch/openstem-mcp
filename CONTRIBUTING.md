@@ -33,7 +33,7 @@ npx @modelcontextprotocol/inspector uv run openstem-mcp
 
 ## CI
 
-`.github/workflows/ci.yml`이 push·pull_request마다 ubuntu·windows·macos × Python 3.11·3.14에서 잠금 파일 그대로(`uv sync --locked --all-extras`) `openstem-mcp --warmup` → `pytest`를 돌린다. `OPENSTEM_REQUIRE_TEX=1`이라 렌더링 시험이 건너뛰어지면 실패한다. tectonic과 TeX 번들은 캐시 폴더(Linux `~/.cache/openstem`·`~/.cache/Tectonic`, macOS `~/Library/Caches/…`, Windows `%LOCALAPPDATA%\openstem`·`%LOCALAPPDATA%\TectonicProject`)를 `actions/cache`로 다시 쓴다. 릴리스(`publish.yml`)도 이 워크플로를 먼저 돌려 통과해야 PyPI·`.mcpb`를 올린다. `uv.lock`을 바꿨다면 `uv lock --check`가 통과하는지 확인한다(`--locked`라 어긋나면 CI가 실패한다).
+`.github/workflows/ci.yml`이 push·pull_request마다 ubuntu·windows·macos × Python 3.11·3.14에서 잠금 파일 그대로(`uv sync --locked --all-extras`) `openstem-mcp --warmup` → `pytest`를 돌린다. `OPENSTEM_REQUIRE_TEX=1`이라 렌더링 시험이 건너뛰어지면 실패한다. 자동 설치한 tectonic(openstem 캐시 폴더: Linux `~/.cache/openstem`, macOS `~/Library/Caches/openstem`, Windows `%LOCALAPPDATA%\openstem`)과 TeX 번들(CI에서는 `TECTONIC_CACHE_DIR`로 한곳에 모은다)을 `actions/cache`로 다시 쓴다. warmup이 성공하면 시험 결과와 상관없이 캐시를 저장한다. warmup이 실패하면 `.github/scripts/tex_diagnose.py`가 문서별 tectonic 출력 전체를 로그에 남긴다. 릴리스(`publish.yml`)도 이 워크플로를 먼저 돌려 통과해야 PyPI·`.mcpb`를 올린다. `uv.lock`을 바꿨다면 `uv lock --check`가 통과하는지 확인한다(`--locked`라 어긋나면 CI가 실패한다).
 
 PR을 열면 `.github/PULL_REQUEST_TEMPLATE.md`의 확인 목록이 채워진다. 버그와 학교 LMS 확인 결과는 이슈 양식(버그 보고, 학교 LMS 확인 보고)으로 받는다. 토큰·캘린더 주소는 넣지 않는다.
 

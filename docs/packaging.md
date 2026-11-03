@@ -85,6 +85,7 @@ CI는 코드가 시험을 통과하는지만 본다. 사용자가 실제로 설�
 - 진행 글은 stderr에 UTF-8로 쓴다(한국어 Windows의 파이프는 cp949라 호스트 로그가 깨졌다).
 - Windows msvc 빌드는 CRT 정적 링크라 VC 런타임이 필요 없다(가져오는 DLL을 확인했다).
 - 실제 다운로드 시험은 `OPENSTEM_NETWORK_TESTS=1`일 때 돈다.
+- Linux용 0.17.0(musl 정적 빌드)에는 ICU 줄바꿈 데이터가 없어 `\XeTeXlinebreaklocale "ko"`(xetexko가 켠다)가 있으면 XeTeX가 "failed to create linebreak iterator"로 죽는다. 그래서 한글 머리말(`tools/tikz.py`의 `HANGUL_SETUP`)이 문서 시작 때 locale을 끈다. CI(ubuntu)가 시험지 배치 warmup에서 처음 잡았다.
 
 ## HTTP 모드(ChatGPT 등)
 
@@ -93,5 +94,5 @@ CI는 코드가 시험을 통과하는지만 본다. 사용자가 실제로 설�
 ## 아직 확인하지 못한 것
 
 - 실제 Claude Desktop에서 `.mcpb` 더블클릭 설치(호스트가 uv를 주는지, 첫 설치 약 200 MB가 서버 시작 시간 제한 안에 끝나는지)
-- macOS와 Linux aarch64에서 자동 설치한 tectonic 실행(Linux x86_64는 2026-11-03에 설치·해시 확인·실행을 확인했다)
+- Linux aarch64에서 자동 설치한 tectonic 실행(Linux x86_64·Windows x86_64·macOS arm64는 2026-11-03 CI에서 자동 설치 → TeX 번들 warmup → 렌더링 시험까지 확인했다)
 - 실제 ChatGPT·cloudflared 연결
