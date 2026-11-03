@@ -27,7 +27,7 @@ from urllib.parse import unquote
 from openstem import output, sandbox, texcheck
 from openstem.render import latex, pages
 from openstem.tools import ToolResult
-from openstem.tools.tikz import HANGUL_SETUP, hangul_to_text
+from openstem.tools.tikz import FILE_GUARD, HANGUL_SETUP, hangul_to_text
 
 FORMATS = ("pdf", "docx", "pptx")
 LAYOUTS = ("document", "cheatsheet", "exam", "flashcards")
@@ -525,6 +525,8 @@ def to_latex(ast: dict[str, Any], workdir: Path, title: str | None, layout: str,
         header += [HANGUL_SETUP, KOREAN_NAMES]
     if LAYOUT_SETUP[layout][0]:
         header.append(LAYOUT_SETUP[layout][0])
+    # 카드 배치는 tikz를 불러오므로 수식 칸에서도 그림 데이터를 파일에서 읽을 수 있다. render_tikz와 같은 방어선을 둔다.
+    header.append(FILE_GUARD)
     (workdir / "header.tex").write_text("\n".join(header) + "\n", encoding="utf-8")
     variables = [arg for v in PDF_VARIABLES[layout] for arg in ("-V", v)]
     args = [*_write_ast(ast, workdir), *_title_args(title), "-t", "latex", "-s", "-o", "doc.tex"]

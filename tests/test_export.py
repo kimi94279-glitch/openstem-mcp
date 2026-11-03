@@ -298,3 +298,18 @@ async def test_study_prompts(prompt, argument, keywords):
     assert "단진자 주기 측정" in text
     for keyword in keywords:
         assert keyword in text, keyword
+
+
+def test_flashcards_math_cannot_read_files_through_split_plot(output_dir, tectonic, tmp_path):
+    """수식 칸에서 \\def로 plot 낱말을 나눠 쓰는 우회도 TeX 쪽 방어선(FILE_GUARD)이 막는다. 파일 내용이 에러에 실리면 안 된다."""
+    secret = tmp_path / "secret.dat"
+    secret.write_text("x y\n1 2\nTOKEN-should-not-leak 5\n", encoding="utf-8")
+    path = secret.as_posix()
+    cell = "$\\def\\a{p}\\def\\f{" + path + "}\\tikz\\draw \\a lot file\\f;$"
+    markdown = "## 카드\n\n| 앞면 | 뒷면 |\n|---|---|\n| " + cell + " | 답 |\n"
+    result = export_document(markdown, "pdf", layout="flashcards")
+    assert not result.ok
+    text = " ".join(result.data.get("errors", []))
+    assert "TOKEN-should-not-leak" not in text
+    assert "disabled" in text
+
