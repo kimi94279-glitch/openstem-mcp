@@ -162,3 +162,16 @@
 - id: huge-power-tower-rejected-before-worker
   input: {expr: "x*10**10**10", units: {x: m}}
   expect: {ok: false, errors_contain: ["far too large"]}
+
+# pint 0.25(Python 3.11 잠금 버전)는 "25 degC"를 곱셈으로 읽어 거절했다: 숫자와 단위를 나눠 만든다
+- id: negative-fahrenheit-to-celsius
+  input: {value: "-40 degF", to: degC}
+  expect: {ok: true, approx: -40.0}
+
+- id: celsius-scientific-notation-to-kelvin
+  input: {value: "2.5e1 degC", to: K}
+  expect: {ok: true, approx: 298.15}
+
+- id: delta-celsius-in-formula
+  input: {expr: "m*c*dT", units: {m: "1 kg", c: "4186 J/(kg*K)", dT: "10 delta_degC"}, expect: J}
+  expect: {ok: true, matches: true, approx: 41860.0, excludes: ["temperature reading"]}
