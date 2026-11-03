@@ -1,0 +1,31 @@
+% title: 비스듬히 끄는 물체의 자유물체도
+% description: 수평면 위 물체를 수평과 각 θ를 이루는 힘 F로 끌 때의 F, 중력 mg, 수직항력 N, 운동 마찰력 f와 F의 수평·수직 성분
+% packages:
+% libraries: arrows.meta, calc, patterns
+\begin{tikzpicture}[
+    force/.style={very thick, -{Stealth[length=3mm]}},
+    comp/.style={thin, dashed, -{Stealth[length=2mm]}}]
+  \def\ang{30}    % F가 수평과 이루는 각 θ (도)
+  \def\F{2.8}     % 끄는 힘 F의 화살표 길이
+  \def\mg{2.8}    % 중력 화살표 길이
+  \def\fr{1.6}    % 마찰력 화살표 길이
+  \pgfmathsetmacro\Nlen{\mg-\F*sin(\ang)}  % N = mg - F sin θ
+  % 바닥과 물체 (G는 질량중심)
+  \fill[pattern=north east lines] (-3.5,-0.25) rectangle (4,0);
+  \draw[thick] (-3.5,0) -- (4,0);
+  \draw[thick, fill=blue!10] (-0.8,0) rectangle (0.8,1.2);
+  \coordinate (G) at (0,0.6);
+  % 힘 (모두 질량중심에서 시작)
+  \draw[force] (G) -- ++(\ang:\F) coordinate (Ft) node[above right] {$\vec{F}$};
+  \draw[force] (G) -- ++(0,-\mg) node[below] {$m\vec{g}$};
+  \draw[force] (G) -- ++(0,\Nlen) node[above] {$\vec{N}$};
+  \draw[force] (G) -- ++(-\fr,0) node[left] {$\vec{f}$}; % 운동 방향(오른쪽)의 반대
+  % F의 성분 (점선)
+  \draw[comp] (G) -- (G -| Ft) coordinate (Fx) node[below] {$F\cos\theta$};
+  \draw[comp] (Fx) -- (Ft) node[midway, right] {$F\sin\theta$};
+  % 각도 표시
+  \draw (G) ++(1.2,0) arc[start angle=0, end angle=\ang, radius=1.2];
+  \node at ($(G)+(\ang/2:1.5)$) {$\theta$};
+  % 운동 방향
+  \draw[-{Stealth}, gray] (-3,1.8) -- (-1.8,1.8) node[right] {$\vec{v}$};
+\end{tikzpicture}

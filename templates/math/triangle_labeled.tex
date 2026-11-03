@@ -1,0 +1,20 @@
+% title: 삼각형 (꼭짓점·변·각)
+% description: 꼭짓점 A, B, C와 각각의 대변 a, b, c, 내각 α, β, γ 호 표시. 사인법칙·코사인법칙 그림용
+% packages:
+% libraries: angles, quotes
+% 꼭짓점 좌표만 바꾼다. 변 a는 A의 대변(BC), b는 CA, c는 AB. 각 호는 angle=(시작점)--(꼭짓점)--(끝점), 반시계 방향.
+\begin{tikzpicture}[scale=1.2]
+  \coordinate (A) at (0,0);
+  \coordinate (B) at (5,0);
+  \coordinate (C) at (1.6,3);
+  \draw[thick] (A) -- (B) -- (C) -- cycle;
+  \pic[draw, angle radius=7mm, angle eccentricity=1.45, "$\alpha$"] {angle=B--A--C};
+  \pic[draw, angle radius=7mm, angle eccentricity=1.45, "$\beta$"]  {angle=C--B--A};
+  \pic[draw, angle radius=6mm, angle eccentricity=1.5,  "$\gamma$"] {angle=A--C--B};
+  \node[below left]  at (A) {$A$};
+  \node[below right] at (B) {$B$};
+  \node[above]       at (C) {$C$};
+  \path (B) -- node[above right] {$a$} (C);
+  \path (C) -- node[above left]  {$b$} (A);
+  \path (A) -- node[below]       {$c$} (B);
+\end{tikzpicture}

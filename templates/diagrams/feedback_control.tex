@@ -1,0 +1,39 @@
+% title: 되먹임 제어 블록선도
+% description: 기준 입력 R(s) → 합산점(+, −) → 제어기 C(s) → 플랜트 G(s) → 출력 Y(s), 센서 H(s)로 되먹임. 외란 D(s)가 두 번째 합산점으로 들어온다
+% packages:
+% libraries: arrows.meta, positioning
+% 블록(block)과 합산점(sum)을 right=of로 잇고, 신호 이름은 화살표 위에 node[above]로 단다.
+% 합산점 부호는 원 바깥 귀퉁이에 작게 쓴다. 외란이 없으면 s2·D 줄을 지우고 C에서 G로 바로 잇는다.
+\begin{tikzpicture}[
+    node distance=6mm and 13mm,
+    block/.style={draw, thick, fill=blue!6, minimum width=16mm, minimum height=10mm},
+    sum/.style={draw, thick, circle, minimum size=6mm, inner sep=0pt},
+    sign/.style={font=\footnotesize, inner sep=1pt},
+    arrow/.style={thick, -{Stealth[length=2.5mm]}}]
+  \coordinate (in);
+  \node[sum, right=16mm of in] (s1) {};
+  \node[block, right=of s1] (C) {$C(s)$};
+  \node[sum, right=of C] (s2) {};
+  \node[block, right=of s2] (G) {$G(s)$};
+  \coordinate[right=10mm of G] (branch);
+  \coordinate[right=12mm of branch] (out);
+  \node[block, below=10mm of s2] (H) {$H(s)$};
+  \node[above=9mm of s2] (D) {$D(s)$};
+  \fill (branch) circle[radius=1.5pt];
+  % 앞먹임 경로
+  \draw[arrow] (in) -- node[above] {$R(s)$} (s1);
+  \draw[arrow] (s1) -- node[above] {$E(s)$} (C);
+  \draw[arrow] (C) -- node[above] {$U(s)$} (s2);
+  \draw[arrow] (s2) -- (G);
+  \draw[thick] (G) -- (branch);
+  \draw[arrow] (branch) -- node[above] {$Y(s)$} (out);
+  \draw[arrow] (D) -- (s2);
+  % 되먹임 경로
+  \draw[arrow] (branch) |- (H);
+  \draw[arrow] (H) -| (s1);
+  % 합산점 부호: 들어오는 화살표 쪽 원 귀퉁이 바깥(화살촉과 겹치지 않게)
+  \node[sign, anchor=south east] at (s1.north west) {$+$};
+  \node[sign, anchor=north east] at (s1.south west) {$-$};
+  \node[sign, anchor=south east] at (s2.north west) {$+$};
+  \node[sign, anchor=south west] at (s2.north east) {$+$};
+\end{tikzpicture}

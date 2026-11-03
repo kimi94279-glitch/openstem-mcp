@@ -1,0 +1,28 @@
+% title: 용수철에 매단 물체 (수평면)
+% description: 벽에 연결된 용수철(용수철 상수 k)에 매단 물체를 평형 위치에서 x만큼 당겼을 때 평형 위치 쪽으로 작용하는 복원력 F = -kx
+% packages:
+% libraries: arrows.meta, decorations.pathmorphing, patterns
+\begin{tikzpicture}[
+    force/.style={very thick, -{Stealth[length=3mm]}},
+    spring/.style={thick, decorate, decoration={coil, aspect=0.4,
+      segment length=2.5mm, amplitude=1.6mm, pre length=3mm, post length=3mm}}]
+  \def\Lo{3.5}    % 평형일 때 벽에서 물체 왼쪽 면까지 거리
+  \def\dx{1.5}    % 변위 x (오른쪽이 +)
+  \def\Flen{1.5}  % 복원력 화살표 길이 (kx에 비례)
+  \pgfmathsetmacro\X{\Lo+\dx}   % 지금 물체 왼쪽 면의 위치
+  % 벽과 바닥
+  \fill[pattern=north east lines] (-0.3,-0.25) rectangle (7.5,0);
+  \fill[pattern=north east lines] (-0.3,0) rectangle (0,1.8);
+  \draw[thick] (0,1.8) -- (0,0) -- (7.5,0);
+  % 용수철과 물체
+  \draw[spring] (0,0.35) -- (\X,0.35);
+  \node[above] at (\X/2,0.6) {$k$};
+  \draw[thick, fill=blue!10] (\X,0) rectangle (\X+1.2,1.2);
+  \node at (\X+0.6,0.4) {$m$};
+  % 복원력: 변위의 반대 방향 (평형 위치 쪽)
+  \draw[force] (\X+0.6,0.85) -- ++(-\Flen,0) node[above] {$\vec{F}=-k\vec{x}$};
+  % 평형 위치와 변위 x (바닥 아래)
+  \draw[thin, dashed] (\Lo,0) -- (\Lo,-1.2) node[below] {평형 위치};
+  \draw[thin, dashed] (\X,0) -- (\X,-1.2);
+  \draw[thick, -{Stealth[length=2.5mm]}] (\Lo,-0.75) -- (\X,-0.75) node[midway, below] {$\vec{x}$};
+\end{tikzpicture}

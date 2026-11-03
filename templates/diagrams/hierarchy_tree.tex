@@ -1,0 +1,26 @@
+% title: 계층 구조 (분류 나무)
+% description: 물질의 분류를 위에서 아래로 가지 치는 나무로 표시. 물질 → 순물질(원소, 화합물)·혼합물(균일, 불균일), 맨 아래 칸에 예시
+% packages:
+% libraries:
+% child { node {...} }를 중첩해 가지를 만든다. 가지가 겹치면 level 1·level 2의 sibling distance를 늘린다.
+% 깊이가 하나 더 필요하면 level 3/.style을 추가한다.
+\begin{tikzpicture}[
+    font=\sffamily\small,
+    box/.style={draw, thick, rounded corners=2pt, align=center, minimum width=20mm, minimum height=8mm},
+    edge from parent/.style={draw, thick, gray!70!black},
+    level distance=16mm,
+    level 1/.style={sibling distance=56mm, every node/.append style={box, fill=blue!8}},
+    level 2/.style={sibling distance=28mm, every node/.append style={box, fill=green!8}},
+    ex/.style={font=\sffamily\footnotesize, text=black!70, align=center}]
+  \node[box, fill=orange!15] {물질}
+    child {node {순물질}
+      child {node (el) {원소}}
+      child {node (cp) {화합물}}}
+    child {node {혼합물}
+      child {node (ho) {균일 혼합물}}
+      child {node (he) {불균일 혼합물}}};
+  \node[ex, anchor=north] at ([yshift=-1mm]el.south) {예: 산소 O$_2$,\\철 Fe};
+  \node[ex, anchor=north] at ([yshift=-1mm]cp.south) {예: 물 H$_2$O,\\염화 나트륨};
+  \node[ex, anchor=north] at ([yshift=-1mm]ho.south) {예: 소금물,\\공기};
+  \node[ex, anchor=north] at ([yshift=-1mm]he.south) {예: 흙탕물,\\화강암};
+\end{tikzpicture}

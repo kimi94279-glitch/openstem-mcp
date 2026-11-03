@@ -1,0 +1,13 @@
+% title: 반파 정류 회로
+% description: 교류 전원에 다이오드와 부하 저항 R_L을 직렬로 이어 양(+)의 반주기만 통과시키는 회로. R_L 양단의 출력 전압 표시
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}[american voltages]
+  \draw (0,0) to[sV, l=$v_s$] (0,3)
+        to[D, l=$D$, i>_=$i$] (3,3)
+        to[R, l_=$R_L$, -*] (3,0)
+        -- (0,0);
+  \draw (3,3) to[short, *-o] (5,3);
+  \draw (3,0) to[short, -o] (5,0);
+  \draw (5,3) to[open, v^=$v_{\mathrm{out}}$] (5,0);
+\end{circuitikz}

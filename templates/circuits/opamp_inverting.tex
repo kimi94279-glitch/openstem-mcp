@@ -1,0 +1,13 @@
+% title: 반전 증폭기
+% description: 연산증폭기에 입력 저항 R_in과 되먹임 저항 R_f를 달아 이득 -R_f/R_in을 만드는 회로
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}
+  \draw (0,0) node[op amp] (oa) {};
+  \draw (oa.-) to[short, -*] ++(-0.5,0) coordinate (n)
+        to[R, l=$R_{\mathrm{in}}$, -o] ++(-2.5,0) node[left] {$v_{\mathrm{in}}$};
+  \draw (n) -- ++(0,1.5) coordinate (top)
+        to[R, l=$R_f$] (top -| oa.out) -- (oa.out);
+  \draw (oa.+) -- ++(-0.5,0) node[ground] {};
+  \draw (oa.out) to[short, *-o] ++(1,0) node[right] {$v_{\mathrm{out}}$};
+\end{circuitikz}

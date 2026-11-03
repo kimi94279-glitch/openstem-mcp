@@ -1,0 +1,155 @@
+# plot_data 입력 → 기대 결과
+# expect.ok: 성공 여부 / n_series: 그린 계열 수 / fits: 계열마다 {model, params: {이름: [값, 허용 오차]}, r2_min}
+# warnings_contain: warnings를 합친 문자열에 들어 있어야 할 조각 / no_warnings: 경고 없음
+# contains: 결과 JSON에 들어 있어야 할 조각 / errors_contain: errors를 합친 문자열에 들어 있어야 할 조각
+
+# ── 숫자 목록 ─────────────────────────────────────────
+- id: spring-linear-weighted-hangul-labels
+  input:
+    series: [{x: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6], y: [0.51, 0.99, 1.52, 2.00, 2.49, 3.01], yerr: 0.02, label: 측정값}]
+    fit: linear
+    title: 용수철 늘어남
+    x_label: 질량 $m$ (kg)
+    y_label: 늘어난 길이 $x$ (cm)
+  expect:
+    ok: true
+    no_warnings: true
+    fits: [{model: linear, params: {a: [5.0, 0.1], b: [0.0, 0.05]}, r2_min: 0.999}]
+    contains: ['"weighted": true', '"chi2_red"', '"equation": "y = (']
+
+- id: outlier-beyond-three-sigma
+  input:
+    series: [{x: [1, 2, 3, 4, 5, 6, 7, 8], y: [3.02, 4.98, 7.01, 9.03, 15.0, 12.97, 15.02, 16.99]}]
+    fit: linear
+  expect:
+    ok: true
+    fits: [{model: linear, params: {a: [2.0, 0.3]}}]
+    warnings_contain: ["point(s) at x = 5(y = 15) lie more than 3σ from the fit"]
+
+- id: log-fit
+  input:
+    series: [{x: [1, 2, 4, 8, 16], y: [1.0, 2.39, 3.77, 5.16, 6.55]}]
+    fit: log
+  expect: {ok: true, fits: [{model: log, params: {a: [2.0, 0.01], b: [1.0, 0.02]}, r2_min: 0.9999}]}
+
+- id: exact-cubic-has-no-standard-errors
+  input:
+    series: [{x: [0, 1, 2, 3], y: [1, 2, 9, 28]}]
+    fit: poly3
+  expect:
+    ok: true
+    fits: [{model: poly3, params: {a: [1.0, 0.000001], d: [1.0, 0.000001]}}]
+    warnings_contain: ["standard errors cannot be computed"]
+
+- id: few-points-warning
+  input:
+    series: [{x: [1, 2, 3, 4], y: [2.1, 3.9, 6.2, 7.8]}]
+    fit: linear
+  expect: {ok: true, warnings_contain: ["only 4 points for 2 parameters; standard errors are unreliable"]}
+
+- id: errorbars-without-fit-two-series
+  input:
+    series:
+      - {x: [1, 2, 3], y: [2.0, 4.1, 5.9], yerr: [0.1, 0.2, 0.3], xerr: 0.05, label: 측정 1}
+      - {x: [1, 2, 3], y: [1.0, 2.1, 2.9], label: 측정 2}
+    x_label: 전압 $V$ (V)
+    y_label: 전류 $I$ (mA)
+  expect: {ok: true, n_series: 2, no_warnings: true, excludes: ['"fit"']}
+
+- id: log-axis-hides-nonpositive
+  input:
+    series: [{x: [1, 2, 3], y: [0, 1, 10]}]
+    log_y: true
+  expect: {ok: true, warnings_contain: ["log axis, so 1 point(s) with y ≤ 0"]}
+
+# ── 표 글 ─────────────────────────────────────────────
+- id: decay-tsv-with-plus-minus-cells
+  input:
+    table: "t (s)\tN\n0\t1000 ± 30\n10\t610 ± 25\n20\t370 ± 20\n30\t220 ± 15\n40\t135 ± 12\n50\t82 ± 9\n"
+    fit: exponential
+    log_y: true
+  expect:
+    ok: true
+    fits: [{model: exponential, params: {A: [1000, 10], B: [-0.05, 0.001]}, r2_min: 0.999}]
+    contains: ['"label": "N"', '"weighted": true']
+
+- id: pendulum-markdown-two-columns-power-law
+  input:
+    table: |
+      | L (m) | T1 (s) | T2 (s) |
+      |---|---|---|
+      | 0.2 | 0.90 | 0.91 |
+      | 0.4 | 1.27 | 1.26 |
+      | 0.6 | 1.55 | 1.56 |
+      | 0.8 | 1.79 | 1.80 |
+      | 1.0 | 2.01 | 2.00 |
+    fit: power
+    log_x: true
+    log_y: true
+  expect:
+    ok: true
+    n_series: 2
+    fits:
+      - {model: power, params: {A: [2.0, 0.02], B: [0.5, 0.01]}}
+      - {model: power, params: {A: [2.0, 0.02], B: [0.5, 0.01]}}
+
+- id: projectile-csv-columns-by-name
+  input:
+    table: "t (s), h (m), 비고\n0, 0.0, 시작\n0.2, 1.804,\n0.4, 3.216,\n0.6, 4.236,\n0.8, 4.864,\n1.0, 5.10,\n1.2, 4.944, 끝\n"
+    x_column: t
+    y_columns: [h]
+    fit: poly2
+  expect:
+    ok: true
+    n_series: 1
+    fits: [{model: poly2, params: {a: [-4.9, 0.01], b: [10.0, 0.01], c: [0.0, 0.01]}, r2_min: 0.9999}]
+
+- id: table-default-columns-skip-text-and-blank
+  input:
+    table: "x y 메모\n1 2.0 a\n2 - b\n3 6.1 c\n4 7.9 d\n"
+  expect: {ok: true, n_series: 1, warnings_contain: ["Skipped non-numeric columns: 메모", "skipped 1 row(s) with empty cells"]}
+
+# ── 고칠 입력 ─────────────────────────────────────────
+- id: exponential-needs-positive-y
+  input: {series: [{x: [1, 2, 3], y: [-1, 2, 3]}], fit: exponential}
+  expect: {ok: false, errors_contain: ["needs all y > 0", "x = 1, y = -1"]}
+
+- id: power-needs-positive-x
+  input: {series: [{x: [0, 1, 2], y: [1, 2, 3]}], fit: power}
+  expect: {ok: false, errors_contain: ["needs all x > 0"]}
+
+- id: length-mismatch
+  input: {series: [{x: [1, 2, 3], y: [1, 2]}]}
+  expect: {ok: false, errors_contain: ["x and y lengths differ (x 3, y 2)"]}
+
+- id: negative-error-bar
+  input: {series: [{x: [1, 2], y: [1, 2], yerr: [0.1, -0.1]}]}
+  expect: {ok: false, errors_contain: ["≥ 0"]}
+
+- id: non-numeric-cell
+  input: {table: "a,b\n1,2\n2,x\n"}
+  expect: {ok: false, errors_contain: ["data row 2, column 'b': 'x' is not a number"]}
+
+- id: unknown-column
+  input: {table: "t,v\n1,2\n2,4\n", y_columns: [speed]}
+  expect: {ok: false, errors_contain: ["y_columns 'speed': no such column. Columns: t, v"]}
+
+- id: header-row-missing
+  input: {table: "1,2\n2,4\n3,6\n"}
+  expect: {ok: false, errors_contain: ["first line must be column names"]}
+
+- id: series-and-table-together
+  input: {series: [{x: [1], y: [1]}], table: "a,b\n1,2\n"}
+  expect: {ok: false, errors_contain: ["exactly one of"]}
+
+- id: unknown-fit-model
+  input: {series: [{x: [1, 2, 3], y: [1, 2, 3]}], fit: cubic}
+  expect: {ok: false, errors_contain: ["fit 'cubic' is unknown"]}
+
+- id: same-x-cannot-fit-line
+  input: {series: [{x: [2, 2, 2], y: [1, 2, 3]}], fit: linear}
+  expect: {ok: false, errors_contain: ["needs at least 2 distinct x values"]}
+
+- id: broken-mathtext-label
+  input: {series: [{x: [1, 2], y: [1, 2]}], x_label: "$\\frac{a$"}
+  expect: {ok: false, errors_contain: ["cannot render math ($...$)"]}

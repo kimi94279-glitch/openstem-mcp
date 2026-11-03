@@ -1,0 +1,16 @@
+# scripts/build_mcpb.py가 필요한 파일만 골라 담지만, 공식 CLI(mcpb pack)로 묶을 때도 한 번 더 거른다.
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+tests/
+examples/
+dist/
+scripts/
+packaging/
+server/lib/
+server/venv/

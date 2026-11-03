@@ -1,0 +1,26 @@
+% title: 인공 신경망 (다층 퍼셉트론)
+% description: 입력층 3개, 은닉층 4개, 출력층 2개 뉴런을 모두 이은 다층 퍼셉트론. 층 이름, 입력 x_i, 출력 ŷ_k, 가중치 w 하나를 예로 표시
+% packages:
+% libraries: arrows.meta
+% 층마다 뉴런 수(\foreach 범위)와 세로 간격(\gap)만 바꾼다. 층 사이 연결은 이중 \foreach로 모두 잇는다.
+% 뉴런이 많으면 \gap을 줄이고, 층을 늘리면 x좌표(0, 3, 6, …)를 하나 더 둔다.
+\begin{tikzpicture}[
+    font=\sffamily\small,
+    neuron/.style={draw, thick, circle, minimum size=8mm, inner sep=0pt},
+    conn/.style={-{Stealth[length=1.8mm]}, gray!70},
+    layer/.style={font=\sffamily\small\bfseries, align=center}]
+  \def\gap{1.25}
+  % 뉴런: 층마다 세로 가운데를 맞춘다
+  \foreach \i in {1,...,3} \node[neuron, fill=blue!12] (I\i) at (0,{-(\i-2)*\gap}) {$x_\i$};
+  \foreach \j in {1,...,4} \node[neuron, fill=green!12] (H\j) at (3.2,{-(\j-2.5)*\gap}) {$h_\j$};
+  \foreach \k in {1,...,2} \node[neuron, fill=orange!18] (O\k) at (6.4,{-(\k-1.5)*\gap}) {$\hat{y}_\k$};
+  % 연결
+  \foreach \i in {1,...,3} \foreach \j in {1,...,4} \draw[conn] (I\i) -- (H\j);
+  \foreach \j in {1,...,4} \foreach \k in {1,...,2} \draw[conn] (H\j) -- (O\k);
+  % 가중치 예시 하나(맨 위 연결)
+  \draw[-{Stealth[length=1.8mm]}, thick, red!70!black] (I1) -- node[above, sloped, font=\footnotesize] {$w_{11}^{(1)}$} (H1);
+  % 층 이름
+  \node[layer] at (0,{-2.35*\gap}) {입력층};
+  \node[layer] at (3.2,{-2.35*\gap}) {은닉층};
+  \node[layer] at (6.4,{-2.35*\gap}) {출력층};
+\end{tikzpicture}

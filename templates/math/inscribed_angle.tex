@@ -1,0 +1,28 @@
+% title: 원주각과 중심각
+% description: 같은 호 AB에 대한 중심각 ∠AOB는 원주각 ∠APB의 2배. 호 AB 강조, 두 각 표시
+% packages:
+% libraries: angles, quotes
+% 원 위의 위치(도)만 바꾼다: 호 AB는 \angA에서 \angB까지 반시계 방향, P는 그 반대쪽(큰 호) 위.
+\begin{tikzpicture}
+  \def\R{2.5}
+  \def\angA{210}
+  \def\angB{330}
+  \def\angP{110}
+  \coordinate (O) at (0,0);
+  \coordinate (A) at (\angA:\R);
+  \coordinate (B) at (\angB:\R);
+  \coordinate (P) at (\angP:\R);
+  \draw[thick] (O) circle[radius=\R];
+  \draw[line width=2pt, blue] (A) arc[start angle=\angA, end angle=\angB, radius=\R];
+  \draw[thick] (A) -- (P) -- (B);
+  \draw[thick, red] (A) -- (O) -- (B);
+  \pic[draw, angle radius=8mm, angle eccentricity=1.35, "$\theta$"] {angle=A--P--B};
+  \pic[draw, red, angle radius=6mm, angle eccentricity=1.5, "$2\theta$"] {angle=A--O--B};
+  \foreach \p in {O, A, B, P} \fill (\p) circle[radius=1.5pt];
+  \node[above] at (O) {$O$};
+  \node[below left] at (A) {$A$};
+  \node[below right] at (B) {$B$};
+  \node[above left] at (P) {$P$};
+  \node[below=4pt, blue] at ({(\angA+\angB)/2}:\R) {호 $AB$};
+  \node at (0,-\R-1.1) {$\angle AOB = 2\,\angle APB$};
+\end{tikzpicture}

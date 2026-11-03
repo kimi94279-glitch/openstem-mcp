@@ -1,0 +1,19 @@
+% title: 휘트스톤 브리지
+% description: 저항 네 개를 마름모로 잇고 가운데에 검류계 G를 둔 브리지 회로
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}
+  \ctikzset{label/align=straight}
+  \coordinate (A) at (0,0);
+  \coordinate (B) at (2.5,2.5);
+  \coordinate (C) at (5,0);
+  \coordinate (D) at (2.5,-2.5);
+  \draw (A) to[R, l=$R_1$, *-*] (B) to[R, l=$R_2$, -*] (C);
+  \draw (A) to[R, l_=$R_3$] (D) to[R, l_=$R_4$, *-] (C);
+  \draw (B) to[rmeter, t=G] (D);
+  \draw (A) -- (-1,0) -- (-1,-3.5) to[battery1, l_=$\mathcal{E}$] (6,-3.5) -- (6,0) -- (C);
+  \node[above left] at (A) {A};
+  \node[above] at (B) {B};
+  \node[above right] at (C) {C};
+  \node[below] at (D) {D};
+\end{circuitikz}

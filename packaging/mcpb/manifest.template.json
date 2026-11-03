@@ -1,0 +1,89 @@
+{
+  "manifest_version": "0.4",
+  "name": "openstem",
+  "display_name": "OpenSTEM",
+  "version": "(scripts/build_mcpb.py가 src/openstem/__init__.py의 __version__으로 채운다)",
+  "description": "이공계 공부 도구: 회로·물리 그림, 함수·실험 데이터 그래프, 분자 구조식, 풀이 검산·단위 검사, 강의 자료(PDF·한글) 읽기, 시험지·슬라이드·암기 카드 만들기. 계산과 그리기는 모두 내 PC에서 한다.",
+  "long_description": "지금 쓰는 AI에 이공계 공부 도구를 붙인다. 서버는 AI를 따로 부르지 않고 그리기·계산만 하므로 추가 구독이나 API 키가 필요 없다.\n\n- **그림**: 회로도·자유물체도·벡터·도형·순서도(TikZ), 함수 그래프, 측정 데이터 그래프와 맞춤(R²·표준오차), 분자 구조식·반응식\n- **검산**: 등식 비교, 방정식, 미분·적분·극한, 미분방정식, 행렬, 라플라스 변환, 급수, 확률분포, 단위·차원 검사\n- **자료**: 자료 폴더의 PDF·한글(HWP/HWPX)·워드·파워포인트 파일 읽기, 학교 LMS(읽기 전용)의 마감·공지·자료\n- **만들기**: PDF·워드·파워포인트, A4 한 장 치트시트, 정답과 해설이 붙은 시험지, 양면 인쇄용 암기 카드\n\n**처음 켤 때**: 파이썬 패키지와 LaTeX 엔진(tectonic, 약 21 MB), TeX 패키지(약 300 MB)를 내려받는다(인터넷 연결 필요, 3~5분). 그동안 그림·PDF 툴은 \"준비 중\"이라고 답하니 잠시 뒤 다시 시키면 된다.\n\n결과물은 설정에서 고른 결과물 폴더에 저장된다. AI가 읽을 수 있는 파일은 자료 폴더와 결과물 폴더 안 파일뿐이다.",
+  "author": {
+    "name": "(pyproject.toml의 authors에서 채운다)"
+  },
+  "icon": "icon.png",
+  "server": {
+    "type": "uv",
+    "entry_point": "launch.py",
+    "mcp_config": {
+      "command": "uv",
+      "args": ["run", "--directory", "${__dirname}", "--frozen", "--no-dev", "--extra", "latex", "launch.py"],
+      "env": {
+        "OPENSTEM_OUTPUT_DIR": "${user_config.output_dir}",
+        "OPENSTEM_INPUT_DIR": "${user_config.materials_dir}",
+        "OPENSTEM_LMS_SCHOOL": "${user_config.lms_school}",
+        "OPENSTEM_LMS_TOKEN": "${user_config.lms_token}",
+        "OPENSTEM_LMS_CALENDAR_URL": "${user_config.lms_calendar_url}",
+        "OPENSTEM_LMS_URL": "${user_config.lms_url}"
+      }
+    }
+  },
+  "tools": [
+    { "name": "render_tikz", "description": "회로도·자유물체도·벡터·도형·블록도를 그림(SVG·PDF·PNG)으로 만든다" },
+    { "name": "render_molecule", "description": "SMILES로 분자 구조식·반응식을 그리고 분자식·분자량을 알려 준다" },
+    { "name": "plot_function", "description": "함수 그래프를 그리고 특이점·정의역 밖 구간을 알려 준다" },
+    { "name": "plot_data", "description": "측정 데이터를 오차 막대와 함께 그리고 직선·다항·지수 등으로 맞춘다(R², 표준오차)" },
+    { "name": "check_units", "description": "식의 단위·차원이 맞는지 검사하고 단위를 변환한다" },
+    { "name": "verify_math", "description": "등식·방정식·미적분·극한·미분방정식·행렬·확률을 계산해 풀이를 검산한다" },
+    { "name": "export_document", "description": "PDF·워드·파워포인트, 치트시트·시험지·암기 카드로 내보낸다" },
+    { "name": "read_document", "description": "자료 폴더의 PDF·한글(HWP/HWPX)·워드·파워포인트 파일을 읽는다" },
+    { "name": "get_template", "description": "검증된 그림 예제(회로·물리·수학·다이어그램)를 읽는다" },
+    { "name": "lms", "description": "학교 LMS의 과목·마감·공지·자료를 읽는다(읽기 전용, 제출·글쓰기 없음). 지원 학교 목록, 토큰이 안 되면 캘린더 주소로 마감만" }
+  ],
+  "keywords": ["stem", "education", "math", "physics", "chemistry", "latex", "tikz", "korean", "이공계", "공부"],
+  "license": "(pyproject.toml에서 채운다)",
+  "compatibility": {
+    "platforms": ["darwin", "win32", "linux"],
+    "runtimes": {
+      "python": "(pyproject.toml의 requires-python에서 채운다)"
+    }
+  },
+  "user_config": {
+    "output_dir": {
+      "type": "directory",
+      "title": "결과물 폴더",
+      "description": "그림·그래프·PDF·문서를 저장할 폴더",
+      "default": "${DOCUMENTS}/OpenSTEM",
+      "required": false
+    },
+    "materials_dir": {
+      "type": "directory",
+      "title": "자료 폴더 (선택)",
+      "description": "AI가 읽을 강의 자료(PDF·한글·워드·파워포인트)를 넣어 두는 폴더. 비워 두면 결과물 폴더 안 '자료' 폴더를 쓴다. 이 폴더와 결과물 폴더 밖 파일은 읽지 않는다.",
+      "required": false
+    },
+    "lms_school": {
+      "type": "string",
+      "title": "학교 이름 (예: 성균관대)",
+      "description": "과제 마감·공지·강의 자료를 읽어 올 학교(읽기만 하고 제출·글쓰기는 하지 않는다). 줄임말도 된다(성대, 서울대, KAIST). LMS 주소는 학교 이름으로 찾는다. 지원 학교는 AI에게 'LMS 지원 학교 목록'을 물어보면 된다.",
+      "required": false
+    },
+    "lms_token": {
+      "type": "string",
+      "title": "LMS 액세스 토큰 (선택)",
+      "description": "LMS에서 직접 만든 액세스 토큰. Canvas·LearningX: 계정 → 설정 → 승인된 통합 → + 새 액세스 토큰. Moodle·Coursemos: 환경설정 → 보안 키. 비밀번호는 넣지 않는다. 학교 LMS 주소로만 보낸다.",
+      "sensitive": true,
+      "required": false
+    },
+    "lms_calendar_url": {
+      "type": "string",
+      "title": "LMS 캘린더 주소(토큰이 안 될 때)",
+      "description": "토큰을 만들 수 없는 학교에서 과제 마감만 읽을 때 쓰는 캘린더 구독 주소(https). Canvas·LearningX: 캘린더 → 캘린더 피드. Moodle·Coursemos: 달력 → 일정 내보내기 → 캘린더 URL. 이 주소만 있으면 누구나 내 일정을 볼 수 있으니 비밀번호처럼 다룬다.",
+      "sensitive": true,
+      "required": false
+    },
+    "lms_url": {
+      "type": "string",
+      "title": "LMS 주소 직접 지정 (선택)",
+      "description": "보통은 비워 둔다(학교 이름으로 찾는다). 목록에 없는 학교거나 주소를 직접 정할 때만 넣는다. 예: https://canvas.학교.ac.kr",
+      "required": false
+    }
+  }
+}

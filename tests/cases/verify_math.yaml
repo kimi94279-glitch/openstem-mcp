@@ -1,0 +1,596 @@
+# verify_math 입력 → 기대 결과
+# expect.ok: 성공 여부 / matches: equal 판정 / result: 결과 평문 / solutions: solutions[].result (순서대로)
+# system: 연립 해 [{변수: 값}] / approx: 결과나 해 중 하나의 근삿값(오차 1e-4) / contains: 결과 JSON에 들어 있어야 할 조각
+# errors_contain: errors를 합친 문자열에 들어 있어야 할 조각 / excludes: 결과 JSON에 없어야 할 조각
+# fields: 점으로 이은 경로의 값(예: det.result, against.satisfies_ics). matrix·ode처럼 결과가 중첩된 op용
+
+# ── equal ─────────────────────────────────────────────
+- id: equal-trig-identity
+  input: {op: equal, expr: "sin(x)**2", against: "(1 - cos(2*x))/2"}
+  expect: {ok: true, matches: true, contains: ['"method": "symbolic"']}
+
+- id: equal-wrong-expansion-has-counterexample
+  input: {op: equal, expr: "(x+1)**2", against: "x**2 + 1"}
+  expect: {ok: true, matches: false, contains: ["counterexample"]}
+
+- id: equal-sqrt-of-square-is-abs
+  input: {op: equal, expr: "sqrt(x**2)", against: "x"}
+  expect: {ok: true, matches: false, contains: ['"expr": "Abs(x)"']}
+
+- id: equal-antiderivatives-differ-by-constant
+  input: {op: equal, expr: "x**3/3 + 5", against: "x**3/3"}
+  expect: {ok: true, matches: false, contains: ["differ by the constant 5"]}
+
+- id: equal-log-domains-differ
+  input: {op: equal, expr: "log(x**2)", against: "2*log(x)"}
+  expect: {ok: true, matches: false, contains: ["different domains"]}
+
+- id: equal-physics-many-variables
+  input: {op: equal, expr: "v0*t + a*t**2/2", against: "t*(2*v0 + a*t)/2"}
+  expect: {ok: true, matches: true, contains: ['"variables": ["a", "t", "v0"]']}
+
+- id: equal-latex-derivative
+  input: {op: equal, expr: '\frac{d}{dx} x^3', against: '3x^2', latex: true}
+  expect: {ok: true, matches: true}
+
+- id: equal-float-coefficients
+  input: {op: equal, expr: "1.2*x + 0.6*x", against: "1.8*x"}
+  expect: {ok: true, matches: true, contains: ['"method": "symbolic"']}
+
+- id: equal-float-sum
+  input: {op: equal, expr: "0.1*x + 0.2*x", against: "0.3*x"}
+  expect: {ok: true, matches: true}
+
+- id: equal-small-constants-compared-relatively
+  input: {op: equal, expr: "6.674e-11*M*m/r**2", against: "6.675e-11*M*m/r**2"}
+  expect: {ok: true, matches: false, contains: ["counterexample", "Relative difference"]}
+
+- id: equal-capital-E-is-a-variable
+  input: {op: equal, expr: "E", against: "m*c**2"}
+  expect: {ok: true, matches: false, contains: ['"variables": ["E", "c", "m"]']}
+
+- id: equal-numbers-show-values-and-radian-hint
+  input: {op: equal, expr: "sin(30)", against: "1/2"}
+  expect: {ok: true, matches: false, contains: ['"values"', "radians"], excludes: ["integration constant"]}
+
+- id: equal-momentum-real-suggests-positive
+  input: {op: equal, expr: "sqrt(m**2*v**2)", against: "m*v"}
+  expect: {ok: true, matches: false, contains: ["counterexample", "if all variables are positive"]}
+
+- id: equal-momentum-assume-positive
+  input: {op: equal, expr: "sqrt(m**2*v**2)", against: "m*v", assume: positive}
+  expect: {ok: true, matches: true}
+
+- id: equal-log-product-real-suggests-positive
+  input: {op: equal, expr: "log(a*b)", against: "log(a) + log(b)"}
+  expect: {ok: true, matches: false, contains: ["if all variables are positive"]}
+
+- id: equal-log-product-assume-positive
+  input: {op: equal, expr: "log(a*b)", against: "log(a) + log(b)", assume: positive}
+  expect: {ok: true, matches: true}
+
+- id: equal-sqrt-product-assume-positive
+  input: {op: equal, expr: "sqrt(a*b)", against: "sqrt(a)*sqrt(b)", assume: positive}
+  expect: {ok: true, matches: true}
+
+- id: equal-latex-assume-positive
+  input: {op: equal, expr: '\sqrt{m^2 v^2}', against: 'm v', latex: true, assume: positive}
+  expect: {ok: true, matches: true}
+
+- id: equal-wrong-formula-has-no-positive-note
+  input: {op: equal, expr: "m*v**2", against: "m*v**2/2", assume: real}
+  expect: {ok: true, matches: false, excludes: ["if all variables are positive"]}
+
+# ── simplify ──────────────────────────────────────────
+- id: simplify-rational
+  input: {op: simplify, expr: "(x**2 - 1)/(x - 1)"}
+  expect: {ok: true, result: "x + 1"}
+
+- id: simplify-pythagorean
+  input: {op: simplify, expr: "sin(theta)**2 + cos(theta)**2"}
+  expect: {ok: true, result: "1"}
+
+# ── solve ─────────────────────────────────────────────
+- id: solve-quadratic
+  input: {op: solve, expr: "x**2 = 4"}
+  expect: {ok: true, solutions: ["-2", "2"]}
+
+- id: solve-no-real-roots-shows-complex
+  input: {op: solve, expr: "x**2 + 1"}
+  expect: {ok: true, solutions: [], contains: ["No real solutions", "complex_solutions"]}
+
+- id: solve-periodic-general-solution
+  input: {op: solve, expr: "sin(x) = 1/2"}
+  expect: {ok: true, contains: ['"general"', '"result": "pi/6"', "n in general is an integer"]}
+
+- id: solve-transcendental-numeric
+  input: {op: solve, expr: "cos(x) = x"}
+  expect: {ok: true, approx: 0.7390851, contains: ["found roots numerically"]}
+
+- id: solve-system
+  input: {op: solve, expr: "x + y = 3; x - y = 1", var: "x, y"}
+  expect: {ok: true, system: [{x: "2", y: "1"}]}
+
+- id: solve-free-fall-time
+  input: {op: solve, expr: "20 = 9.8*t**2/2", var: t}
+  expect: {ok: true, approx: 2.0203051}
+
+- id: solve-formula-for-one-letter
+  input: {op: solve, expr: "h = 1/2*g*t**2", var: t}
+  expect: {ok: true, solutions: ["-sqrt(2)*sqrt(h/g)", "sqrt(2)*sqrt(h/g)"], contains: ["valid when real"], excludes: ["is an integer"]}
+
+- id: solve-formula-assume-positive-keeps-positive-root
+  input: {op: solve, expr: "h = 1/2*g*t**2", var: t, assume: positive}
+  expect: {ok: true, solutions: ["sqrt(2)*sqrt(h)/sqrt(g)"], contains: ["Dropped non-positive solutions"]}
+
+- id: solve-mass-energy-for-m
+  input: {op: solve, expr: "E = m*c**2", var: m}
+  expect: {ok: true, solutions: ["E/c**2"], excludes: ["is an integer"]}
+
+- id: solve-energy-conservation-for-v
+  input: {op: solve, expr: "m*g*h = m*v**2/2", var: v, assume: positive}
+  expect: {ok: true, solutions: ["sqrt(2)*sqrt(g)*sqrt(h)"]}
+
+- id: solve-exponential-decay-for-t
+  input: {op: solve, expr: "v = v0*exp(-k*t)", var: t}
+  expect: {ok: true, solutions: ["-log(v/v0)/k"], excludes: ["is an integer"]}
+
+- id: solve-pendulum-for-length
+  input: {op: solve, expr: "T = 2*pi*sqrt(L/g)", var: L}
+  expect: {ok: true, solutions: ["T**2*g/(4*pi**2)"], excludes: ["is an integer"]}
+
+- id: solve-transcendental-with-parameter-explains
+  input: {op: solve, expr: "cos(x) = a*x", var: x}
+  expect: {ok: true, contains: ["does not mean there is no solution", "Substitute values"], excludes: ["Internal error"]}
+
+- id: solve-periodic-with-parameter-shows-condition
+  input: {op: solve, expr: "sin(x) = a", var: x}
+  expect: {ok: true, contains: ['"general"', "n in general is an integer", "Condition"]}
+
+# ── diff ──────────────────────────────────────────────
+- id: diff-second-order
+  input: {op: diff, expr: "x**3*exp(x)", order: 2}
+  expect: {ok: true, result: "x*(x**2 + 6*x + 6)*exp(x)"}
+
+- id: diff-kinetic-energy-by-v
+  input: {op: diff, expr: "m*v**2/2", var: v}
+  expect: {ok: true, result: "m*v"}
+
+# ── integrate ─────────────────────────────────────────
+- id: integrate-by-parts
+  input: {op: integrate, expr: "x*exp(x)"}
+  expect: {ok: true, result: "(x - 1)*exp(x)", contains: ["integration constant"]}
+
+- id: integrate-gaussian
+  input: {op: integrate, expr: "exp(-x**2)", bounds: ["-oo", "oo"]}
+  expect: {ok: true, result: "sqrt(pi)"}
+
+- id: integrate-sine-integral-numeric-value
+  input: {op: integrate, expr: "sin(x)/x", bounds: ["0", "1"]}
+  expect: {ok: true, approx: 0.9460831}
+
+- id: integrate-reciprocal-notes-absolute-value
+  input: {op: integrate, expr: "1/x"}
+  expect: {ok: true, result: "log(x)", contains: ["ln|"]}
+
+- id: integrate-divergent-through-pole
+  input: {op: integrate, expr: "1/x", bounds: ["-1", "1"]}
+  expect: {ok: true, result: "diverges", contains: ["diverges"], excludes: ["nan"]}
+
+- id: integrate-divergent-to-infinity-numeric-bounds
+  input: {op: integrate, expr: "1/x**2", bounds: [-1, 1]}
+  expect: {ok: true, result: "oo", contains: ["diverges"]}
+
+- id: integrate-numeric-bounds
+  input: {op: integrate, expr: "x**2", bounds: [0, 1]}
+  expect: {ok: true, result: "1/3"}
+
+# ── limit ─────────────────────────────────────────────
+- id: limit-sinx-over-x
+  input: {op: limit, expr: "sin(x)/x", point: "0"}
+  expect: {ok: true, result: "1"}
+
+- id: limit-two-sided-does-not-exist
+  input: {op: limit, expr: "1/x", point: "0"}
+  expect: {ok: true, result: "does not exist", contains: ["left and right limits differ"]}
+
+- id: limit-right-side
+  input: {op: limit, expr: "1/x", point: "0+"}
+  expect: {ok: true, result: "oo", contains: ["right-hand"]}
+
+- id: limit-at-infinity-gives-e
+  input: {op: limit, expr: "(1 + 1/x)**x", point: "oo"}
+  expect: {ok: true, result: "e"}
+
+# ── evaluate ──────────────────────────────────────────
+- id: evaluate-exact-and-approx
+  input: {op: evaluate, expr: "sqrt(8)"}
+  expect: {ok: true, result: "2*sqrt(2)", approx: 2.8284271}
+
+- id: evaluate-projectile-height
+  input: {op: evaluate, expr: "v0*t - g*t**2/2", point: "v0=20, g=9.8, t=2"}
+  expect: {ok: true, result: "20.4"}
+
+- id: evaluate-single-variable-shorthand
+  input: {op: evaluate, expr: "sin(x)", point: "pi/6"}
+  expect: {ok: true, result: "1/2"}
+
+- id: evaluate-float-times-radical-gives-decimal
+  input: {op: evaluate, expr: "sqrt(2*h/g)", point: "h=20, g=9.8"}
+  expect: {ok: true, result: "2.02030508910442", approx: 2.0203051}
+
+- id: evaluate-division-by-zero-explains
+  input: {op: evaluate, expr: "1/x", point: "x=0"}
+  expect: {ok: true, contains: ["division by zero"]}
+
+- id: evaluate-zero-over-zero-points-to-limit
+  input: {op: evaluate, expr: "(x**2 - 1)/(x - 1)", point: "x=1"}
+  expect: {ok: true, contains: ["op=limit"]}
+
+- id: evaluate-capital-E-is-a-variable
+  input: {op: evaluate, expr: "E/(m*c**2)", point: "E=18, m=2, c=3"}
+  expect: {ok: true, result: "1"}
+
+- id: evaluate-latex-pi-is-the-constant
+  input: {op: evaluate, expr: '\frac{\pi}{2}', latex: true}
+  expect: {ok: true, approx: 1.5707963}
+
+- id: evaluate-latex-integral
+  input: {op: evaluate, expr: '\int_0^1 x^2 dx', latex: true}
+  expect: {ok: true, result: "1/3"}
+
+# ── 입력 오류 ─────────────────────────────────────────
+- id: error-undefined-function
+  input: {op: solve, expr: "f(x) = 2"}
+  expect: {ok: false, errors_contain: ["is not a function"]}
+
+- id: error-python-keyword-variable
+  input: {op: equal, expr: "lambda*x", against: "x"}
+  expect: {ok: false, errors_contain: ["keyword"]}
+
+- id: error-bad-latex
+  input: {op: simplify, expr: '\frac{x', latex: true}
+  expect: {ok: false, errors_contain: ["cannot parse LaTeX"]}
+
+- id: error-equal-needs-against
+  input: {op: equal, expr: "x"}
+  expect: {ok: false, errors_contain: ["against is empty"]}
+
+- id: error-limit-needs-point
+  input: {op: limit, expr: "sin(x)/x"}
+  expect: {ok: false, errors_contain: ["needs point"]}
+
+- id: error-ambiguous-variable
+  input: {op: diff, expr: "a*b"}
+  expect: {ok: false, errors_contain: ["Set var"]}
+
+- id: error-point-assigns-constant
+  input: {op: evaluate, expr: "e*x", point: "e=3, x=2"}
+  expect: {ok: false, errors_contain: ["constant"]}
+
+- id: error-unknown-assume
+  input: {op: equal, expr: "x", against: "x", assume: complex}
+  expect: {ok: false, errors_contain: ["assume"]}
+
+- id: error-latex-with-sympy-against
+  input: {op: equal, expr: '|x|', against: "abs(x)", latex: true}
+  expect: {ok: false, errors_contain: ["against", "sympy syntax sent as LaTeX"]}
+
+- id: error-latex-undefined-function
+  input: {op: equal, expr: 'f(x)', against: 'x', latex: true}
+  expect: {ok: false, errors_contain: ["undefined function f(x)"]}
+
+- id: error-latex-integral-sent-to-integrate
+  input: {op: integrate, expr: '\int_0^1 x^2 dx', latex: true}
+  expect: {ok: false, errors_contain: ["For op=integrate send only the expression inside"]}
+
+- id: error-latex-derivative-sent-to-diff
+  input: {op: diff, expr: '\frac{d}{dx} x^3', latex: true}
+  expect: {ok: false, errors_contain: ["For op=diff send only the expression inside"]}
+
+# ── ode(상미분방정식) ─────────────────────────────────
+- id: ode-harmonic-with-initial-conditions
+  input: {op: ode, expr: "y'' + y = 0", ics: "y(0)=0, y'(0)=1"}
+  expect: {ok: true, result: "sin(x)", fields: {checked: true, function: "y(x)", order: 2}, contains: ["characteristic equation"]}
+
+- id: ode-constant-coefficients-nonhomogeneous
+  input: {op: ode, expr: "y'' + 3*y' + 2*y = sin(x)"}
+  expect: {ok: true, result: "C1*exp(-2*x) + C2*exp(-x) + sin(x)/10 - 3*cos(x)/10", contains: ["undetermined coefficients", "Arbitrary constants"]}
+
+- id: ode-first-order-linear
+  input: {op: ode, expr: "y' + y = x"}
+  expect: {ok: true, result: "C1*exp(-x) + x - 1", contains: ["first-order linear"]}
+
+- id: ode-decay-in-time-with-symbolic-initial-value
+  input: {op: ode, expr: "y' = -k*y", var: t, ics: "y(0)=y0", assume: positive}
+  expect: {ok: true, result: "y0*exp(-k*t)", fields: {function: "y(t)"}}
+
+- id: ode-rc-circuit-charge
+  input: {op: ode, expr: "q' + q/(R*C) = V/R", var: t, ics: "q(0)=0", assume: positive}
+  expect: {ok: true, result: "C*V - C*V*exp(-t/(C*R))", fields: {checked: true}}
+
+- id: ode-function-named-x-uses-t
+  input: {op: ode, expr: "x'' + w**2*x = 0", assume: positive}
+  expect: {ok: true, result: "C1*sin(t*w) + C2*cos(t*w)", fields: {function: "x(t)"}}
+
+- id: ode-cauchy-euler
+  input: {op: ode, expr: "x**2*y'' + x*y' - y = 0"}
+  expect: {ok: true, result: "C1/x + C2*x", contains: ["Cauchy-Euler"]}
+
+- id: ode-function-call-notation-is-accepted
+  input: {op: ode, expr: "y''(t) + 4*y(t) = 0", ics: "y(0)=1, y'(0)=0"}
+  expect: {ok: true, result: "cos(2*t)"}
+
+- id: ode-against-general-solution-matches
+  input: {op: ode, expr: "y' = k*y", against: "C1*exp(k*x)"}
+  expect: {ok: true, matches: true, fields: {against.satisfies_ode: true}}
+
+- id: ode-against-wrong-sign-has-residual
+  input: {op: ode, expr: "y' = k*y", against: "C1*exp(-k*x)"}
+  expect: {ok: true, matches: false, contains: ["residual"]}
+
+- id: ode-against-fails-initial-conditions
+  input: {op: ode, expr: "y'' + y = 0", ics: "y(0)=0, y'(0)=1", against: "cos(x)"}
+  expect: {ok: true, matches: false, fields: {against.satisfies_ode: true, against.satisfies_ics: false}}
+
+- id: ode-against-missing-constants-is-noted
+  input: {op: ode, expr: "y'' + y = 0", against: "sin(x)"}
+  expect: {ok: true, matches: true, contains: ["0 arbitrary constant"]}
+
+- id: error-ode-without-derivative
+  input: {op: ode, expr: "y = 2*x"}
+  expect: {ok: false, errors_contain: ["No derivative"]}
+
+- id: error-ode-initial-condition-order-too-high
+  input: {op: ode, expr: "y'' + y = 0", ics: "y''(0)=1"}
+  expect: {ok: false, errors_contain: ["up to y'"]}
+
+- id: error-ode-two-unknown-functions
+  input: {op: ode, expr: "y' = z'"}
+  expect: {ok: false, errors_contain: ["Several names"]}
+
+- id: error-prime-outside-ode
+  input: {op: simplify, expr: "y' + y"}
+  expect: {ok: false, errors_contain: ["op=ode"]}
+
+- id: error-ode-latex
+  input: {op: ode, expr: "y'' + y = 0", latex: true}
+  expect: {ok: false, errors_contain: ["latex"]}
+
+# ── matrix(선형대수) ──────────────────────────────────
+- id: matrix-determinant
+  input: {op: matrix, matrix: [["1", "2"], ["3", "4"]], expr: det}
+  expect: {ok: true, fields: {det.result: "-2"}, excludes: ['"inverse"']}
+
+- id: matrix-everything-by-default
+  input: {op: matrix, matrix: [[1, 2], [3, 4]]}
+  expect: {ok: true, fields: {rank: 2, inverse.result: [["-2", "1"], ["3/2", "-1/2"]], rref.pivots: [1, 2], eigen.charpoly: "lambda**2 - 5*lambda - 2"}}
+
+- id: matrix-symmetric-eigenvalues
+  input: {op: matrix, matrix: [["2", "0", "0"], ["0", "3", "4"], ["0", "4", "9"]], expr: eigen}
+  expect: {ok: true, fields: {eigen.values.0.result: "1", eigen.values.2.result: "11", eigen.diagonalizable: true}, contains: ["det(λI - A)"]}
+
+- id: matrix-defective-not-diagonalizable
+  input: {op: matrix, matrix: [["1", "1"], ["0", "1"]], expr: eigen}
+  expect: {ok: true, fields: {eigen.values.0.multiplicity: 2, eigen.diagonalizable: false}}
+
+- id: matrix-singular-has-no-inverse
+  input: {op: matrix, matrix: [["1", "2"], ["2", "4"]], expr: "inverse, rank"}
+  expect: {ok: true, fields: {inverse: null, rank: 1}, contains: ["no inverse"]}
+
+- id: matrix-rref-of-augmented-system
+  input: {op: matrix, matrix: [["1", "1", "3"], ["1", "-1", "1"]], expr: rref}
+  expect: {ok: true, fields: {rref.result: [["1", "0", "2"], ["0", "1", "1"]]}}
+
+- id: matrix-symbolic-inverse-needs-nonzero-det
+  input: {op: matrix, matrix: [["a", "b"], ["c", "d"]], expr: "det, inverse"}
+  expect: {ok: true, fields: {det.result: "a*d - b*c"}, contains: ["exists only when det"]}
+
+- id: matrix-product
+  input: {op: matrix, matrix: [["1", "2"], ["3", "4"]], matrix_b: [["0", "1"], ["1", "0"]]}
+  expect: {ok: true, fields: {product.result: [["2", "1"], ["4", "3"]]}}
+
+- id: matrix-irrational-eigenvalues-fall-back-to-numbers
+  input: {op: matrix, matrix: [[1, 2, 0, 1], [0, 1, 3, 2], [1, 0, 1, 5], [2, 1, 0, 1]], expr: eigen}
+  expect: {ok: true, contains: ["computed numerically"]}
+
+- id: error-matrix-too-large
+  input: {op: matrix, matrix: [[1, 0, 0, 0, 0, 0, 0, 0, 0], [0, 1, 0, 0, 0, 0, 0, 0, 0]]}
+  expect: {ok: false, errors_contain: ["too large"]}
+
+- id: error-matrix-ragged-rows
+  input: {op: matrix, matrix: [["1", "2"], ["3"]]}
+  expect: {ok: false, errors_contain: ["same number of entries"]}
+
+- id: error-matrix-product-shape
+  input: {op: matrix, matrix: [["1", "2"]], matrix_b: [["1", "2"]]}
+  expect: {ok: false, errors_contain: ["cannot be multiplied"]}
+
+- id: error-matrix-unknown-part
+  input: {op: matrix, matrix: [["1", "2"], ["3", "4"]], expr: trace}
+  expect: {ok: false, errors_contain: ["no expr 'trace'"]}
+
+# ── laplace / inverse_laplace ─────────────────────────
+- id: laplace-exponential-decay
+  input: {op: laplace, expr: "exp(-a*t)"}
+  expect: {ok: true, result: "1/(a + s)"}
+
+- id: laplace-sine
+  input: {op: laplace, expr: "sin(w*t)", assume: positive}
+  expect: {ok: true, result: "w/(s**2 + w**2)"}
+
+- id: laplace-delayed-step
+  input: {op: laplace, expr: "Heaviside(t - 1)"}
+  expect: {ok: true, result: "exp(-s)/s"}
+
+- id: inverse-laplace-with-partial-fractions
+  input: {op: inverse_laplace, expr: "1/(s**2 + 3*s + 2)"}
+  expect: {ok: true, result: "exp(-t) - exp(-2*t)", fields: {partial_fractions: "-1/(s + 2) + 1/(s + 1)"}, contains: ["t > 0"]}
+
+- id: inverse-laplace-damped-cosine
+  input: {op: inverse_laplace, expr: "(s + 1)/(s**2 + 2*s + 5)"}
+  expect: {ok: true, result: "exp(-t)*cos(2*t)"}
+
+- id: inverse-laplace-delay
+  input: {op: inverse_laplace, expr: "exp(-2*s)/s"}
+  expect: {ok: true, result: "Heaviside(t - 2)"}
+
+- id: error-laplace-uses-s
+  input: {op: laplace, expr: "s*t"}
+  expect: {ok: false, errors_contain: ["variable of the result F(s)"]}
+
+- id: error-inverse-laplace-uses-t
+  input: {op: inverse_laplace, expr: "t/s"}
+  expect: {ok: false, errors_contain: ["variable of the result f(t)"]}
+
+# ── series(테일러 급수) ───────────────────────────────
+- id: series-sine-at-zero
+  input: {op: series, expr: "sin(x)", order: 5}
+  expect: {ok: true, result: "x - x**3/6 + x**5/120", fields: {remainder: "O(x**6)"}}
+
+- id: series-default-order-is-five
+  input: {op: series, expr: "cos(x)"}
+  expect: {ok: true, result: "1 - x**2/2 + x**4/24", fields: {order: 5}}
+
+- id: series-around-one-keeps-shifted-powers
+  input: {op: series, expr: "exp(x)", point: "1", order: 3}
+  expect: {ok: true, result: "e + e*(x - 1) + e*(x - 1)**2/2 + e*(x - 1)**3/6"}
+
+- id: series-binomial
+  input: {op: series, expr: "sqrt(1 + x)", order: 3}
+  expect: {ok: true, result: "1 + x/2 - x**2/8 + x**3/16"}
+
+- id: series-laurent-is-noted
+  input: {op: series, expr: "1/sin(x)", order: 3}
+  expect: {ok: true, result: "1/x + x/6 + 7*x**3/360", contains: ["Laurent series"]}
+
+- id: error-series-order-too-high
+  input: {op: series, expr: "sin(x)", order: 50}
+  expect: {ok: false, errors_contain: ["1-20"]}
+
+# ── sum(급수의 합) ────────────────────────────────────
+- id: sum-basel
+  input: {op: sum, expr: "1/n**2", bounds: [1, "oo"]}
+  expect: {ok: true, result: "pi**2/6", approx: 1.6449341}
+
+- id: sum-harmonic-diverges
+  input: {op: sum, expr: "1/n", bounds: [1, "oo"]}
+  expect: {ok: true, result: "oo", contains: ["Diverges"]}
+
+- id: sum-geometric-with-condition
+  input: {op: sum, expr: "r**n", bounds: [0, "oo"]}
+  expect: {ok: true, result: "1/(1 - r)", contains: ["Abs(r) < 1"]}
+
+- id: sum-finite-formula
+  input: {op: sum, expr: "k**2", var: k, bounds: [1, "N"]}
+  expect: {ok: true, result: "N**3/3 + N**2/2 + N/6"}
+
+- id: sum-exponential-series
+  input: {op: sum, expr: "x**n/factorial(n)", var: n, bounds: [0, "oo"]}
+  expect: {ok: true, result: "exp(x)"}
+
+- id: sum-oscillating-diverges
+  input: {op: sum, expr: "(-1)**n", bounds: [1, "oo"]}
+  expect: {ok: true, result: "diverges", excludes: ['"approx"']}
+
+- id: sum-numeric-when-no-closed-form
+  input: {op: sum, expr: "1/(n**3 + 1)", bounds: [1, "oo"]}
+  expect: {ok: true, approx: 0.6865033, contains: ["convergence confirmed"]}
+
+- id: error-sum-needs-bounds
+  input: {op: sum, expr: "1/n**2"}
+  expect: {ok: false, errors_contain: ["needs bounds"]}
+
+# ── solve 부등식 ──────────────────────────────────────
+- id: inequality-quadratic
+  input: {op: solve, expr: "x**2 - 4 > 0"}
+  expect: {ok: true, result: "(-oo, -2) ∪ (2, oo)"}
+
+- id: inequality-rational-keeps-closed-end
+  input: {op: solve, expr: "(x - 1)/(x + 2) >= 0"}
+  expect: {ok: true, result: "(-oo, -2) ∪ [1, oo)"}
+
+- id: inequality-chain-and-system-intersect
+  input: {op: solve, expr: "0 < x <= 3; x**2 > 2"}
+  expect: {ok: true, result: "(sqrt(2), 3]"}
+
+- id: inequality-cubic-with-irrational-roots
+  input: {op: solve, expr: "x**3 - 3*x + 1 > 0"}
+  expect: {ok: true, result: "(-1.879385, 0.3472964) ∪ (1.532089, oo)", contains: ["approximations"]}
+
+- id: inequality-no-solution
+  input: {op: solve, expr: "x**2 + 1 < 0"}
+  expect: {ok: true, result: "∅", contains: ["No solution"]}
+
+- id: inequality-assume-positive
+  input: {op: solve, expr: "x**2 - 4 > 0", assume: positive}
+  expect: {ok: true, result: "(2, oo)"}
+
+- id: inequality-absolute-value
+  input: {op: solve, expr: "abs(x - 1) < 3"}
+  expect: {ok: true, result: "(-2, 4)"}
+
+- id: inequality-transcendental-numeric
+  input: {op: solve, expr: "sin(x) > x/2"}
+  expect: {ok: true, result: "(-10, -1.895494) ∪ (0, 1.895494)", contains: ["searched numerically"]}
+
+- id: error-inequality-with-parameter
+  input: {op: solve, expr: "x**2 < a"}
+  expect: {ok: false, errors_contain: ["one variable only"]}
+
+- id: error-inequality-mixed-with-equation
+  input: {op: solve, expr: "x > 0; x**2 = 4"}
+  expect: {ok: false, errors_contain: ["equations and inequalities"]}
+
+# ── probability(확률분포) ─────────────────────────────
+- id: probability-normal-tail
+  input: {op: probability, dist: "Normal(0, 1)", expr: "X > 1.96"}
+  expect: {ok: true, approx: 0.0249979, fields: {event: "X > 1.96", mean: "0", std: "1"}}
+
+- id: probability-normal-interval-other-name
+  input: {op: probability, dist: "Normal(0, 1)", expr: "-1.96 < Z < 1.96"}
+  expect: {ok: true, approx: 0.9500042, fields: {variable: "Z"}}
+
+- id: probability-normal-with-mean-and-std
+  input: {op: probability, dist: "Normal(170, 6)", expr: "X >= 182"}
+  expect: {ok: true, approx: 0.0227501, fields: {variance: "36"}}
+
+- id: probability-binomial-at-least
+  input: {op: probability, dist: "Binomial(10, 0.3)", expr: "X >= 3"}
+  expect: {ok: true, result: "771521517/1250000000", fields: {mean: "3", variance: "21/10 ≈ 2.1"}}
+
+- id: probability-binomial-exact-value
+  input: {op: probability, dist: "Binomial(10, 0.3)", expr: "X = 3"}
+  expect: {ok: true, approx: 0.2668279}
+
+- id: probability-poisson
+  input: {op: probability, dist: "Poisson(2)", expr: "X <= 2"}
+  expect: {ok: true, result: "5*exp(-2)"}
+
+- id: probability-exponential-rate
+  input: {op: probability, dist: "Exponential(0.5)", expr: "X > 3"}
+  expect: {ok: true, result: "exp(-3/2)", fields: {mean: "2"}}
+
+- id: probability-uniform-expectation
+  input: {op: probability, dist: "Uniform(0, 4)", expr: "X**2"}
+  expect: {ok: true, result: "16/3", fields: {expectation: "E[X**2]"}}
+
+- id: probability-continuous-point-is-zero
+  input: {op: probability, dist: "Normal(0, 1)", expr: "X = 1"}
+  expect: {ok: true, result: "0", contains: ["probability of a single point is 0"]}
+
+- id: error-probability-variance-notation
+  input: {op: probability, dist: "N(0, 4)", expr: "X > 1"}
+  expect: {ok: false, errors_contain: ["Normal(μ, σ)"]}
+
+- id: error-probability-negative-std
+  input: {op: probability, dist: "Normal(0, -1)", expr: "X > 1"}
+  expect: {ok: false, errors_contain: ["invalid arguments"]}
+
+- id: error-probability-unknown-distribution
+  input: {op: probability, dist: "Gamma(1, 2)", expr: "X > 1"}
+  expect: {ok: false, errors_contain: ["Unknown distribution 'Gamma'"]}
+
+- id: error-probability-absolute-value-event
+  input: {op: probability, dist: "Normal(0, 1)", expr: "abs(X) < 1.96"}
+  expect: {ok: false, errors_contain: ["could not compute the probability"]}

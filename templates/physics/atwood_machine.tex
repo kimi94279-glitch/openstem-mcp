@@ -1,0 +1,37 @@
+% title: 애트우드 기계
+% description: 고정 도르래에 줄로 이은 두 물체 m₁, m₂(m₂ > m₁)에 작용하는 장력 T와 중력, 가속도 방향 (화살표 길이는 운동 방정식으로 계산)
+% packages:
+% libraries: arrows.meta, calc, patterns
+\begin{tikzpicture}[
+    force/.style={very thick, -{Stealth[length=3mm]}},
+    rope/.style={thick, brown!70!black}]
+  \def\mA{1.0}    % 질량 m₁ (상대값)
+  \def\mB{1.5}    % 질량 m₂ (상대값, m₂ > m₁이면 m₂가 내려감)
+  \def\gs{1.4}    % 질량 1당 중력 화살표 길이
+  \def\R{0.9}     % 도르래 반지름
+  \pgfmathsetmacro\Tlen{2*\mA*\mB/(\mA+\mB)*\gs}  % T = 2 m₁ m₂ g / (m₁ + m₂)
+  % 천장, 도르래
+  \fill[pattern=north east lines] (-1.2,1.6) rectangle (1.2,1.85);
+  \draw[thick] (-1.2,1.6) -- (1.2,1.6);
+  \draw[thick] (0,0) -- (0,1.6);
+  \draw[thick, fill=gray!20] (0,0) circle[radius=\R];
+  \fill (0,0) circle[radius=0.06];
+  % 줄과 물체 (윗면 중앙 A, B / 중심 GA, GB)
+  \coordinate (A) at (-\R,-2.5);
+  \coordinate (B) at (\R,-3.5);
+  \draw[rope] (A) -- (-\R,0) arc[start angle=180, end angle=0, radius=\R] -- (B);
+  \draw[thick, fill=blue!10] ($(A)+(-0.45,-0.9)$) rectangle ($(A)+(0.45,0)$);
+  \draw[thick, fill=blue!10] ($(B)+(-0.55,-1.1)$) rectangle ($(B)+(0.55,0)$);
+  \coordinate (GA) at ($(A)+(0,-0.45)$);
+  \coordinate (GB) at ($(B)+(0,-0.55)$);
+  \node at ($(GA)+(0,0.2)$) {$m_1$};
+  \node at ($(GB)+(0,0.25)$) {$m_2$};
+  % 힘: 장력은 줄을 따라 위로, 중력은 아래로
+  \draw[force] (A) -- ++(0,\Tlen) node[left] {$\vec{T}$};
+  \draw[force] (B) -- ++(0,\Tlen) node[right] {$\vec{T}$};
+  \draw[force] (GA) -- ++(0,{-\mA*\gs}) node[below] {$m_1\vec{g}$};
+  \draw[force] (GB) -- ++(0,{-\mB*\gs}) node[below] {$m_2\vec{g}$};
+  % 가속도 방향
+  \draw[-{Stealth}, gray] ($(GA)+(-1,-0.5)$) -- ++(0,1) node[left] {$\vec{a}$};
+  \draw[-{Stealth}, gray] ($(GB)+(1.1,0.5)$) -- ++(0,-1) node[right] {$\vec{a}$};
+\end{tikzpicture}

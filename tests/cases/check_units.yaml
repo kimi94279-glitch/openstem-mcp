@@ -1,0 +1,111 @@
+# check_units 입력 → 기대 결과
+# expect.ok: 성공 여부 / matches: expect와 차원이 같은지 / consistent: 식 안의 차원이 맞는지
+# approx: 결과 magnitude(상대 오차 1e-6) / contains: 결과 JSON에 들어 있어야 할 조각 / excludes: 없어야 할 조각
+# errors_contain: errors를 합친 문자열에 들어 있어야 할 조각
+
+# ── 식 검사 ───────────────────────────────────────────
+- id: free-fall-time
+  input: {expr: "sqrt(2*h/g)", units: {h: m, g: "m/s^2"}, expect: s}
+  expect: {ok: true, consistent: true, matches: true, contains: ['"dimension": "T (time)"', '"unit": "s"'], excludes: ['"value"']}
+
+- id: free-fall-time-with-values
+  input: {expr: "sqrt(2*h/g)", units: {h: "20 m", g: "9.8 m/s^2"}, expect: s}
+  expect: {ok: true, matches: true, approx: 2.0203050891, contains: ['"value": "2.02031 s"']}
+
+- id: wrong-formula-explains-dimension-gap
+  input: {expr: "sqrt(2*h*g)", units: {h: m, g: "m/s^2"}, expect: s}
+  expect:
+    ok: true
+    consistent: true
+    matches: false
+    contains: ["L·T^-1 (velocity)", "length exponent 1 (result) vs 0 (expected)", "result ÷ expected = L·T^-2 (acceleration)"]
+
+- id: mechanical-energy-is-joule
+  input: {expr: "m*g*h + m*v**2/2", units: {m: kg, g: "m/s^2", h: m, v: "m/s"}, expect: J}
+  expect: {ok: true, consistent: true, matches: true, contains: ["energy/work/torque, J"]}
+
+- id: adding-energy-and-momentum
+  input: {expr: "m*g*h + m*v", units: {m: kg, g: "m/s^2", h: m, v: "m/s"}, expect: J}
+  expect:
+    ok: true
+    consistent: false
+    matches: false
+    contains: ["Dimensions differ among the terms of a sum/difference", "'m*v' → M·L·T^-1 (momentum/impulse)"]
+
+- id: sin-needs-dimensionless-argument
+  input: {expr: "A*sin(t)", units: {A: m, t: s}}
+  expect: {ok: true, consistent: false, contains: ["argument 't' of sin must be dimensionless but is T (time)"]}
+
+- id: sin-of-angular-phase-is-fine
+  input: {expr: "A*sin(w*t + phi)", units: {A: cm, w: "rad/s", t: s, phi: rad}, expect: m}
+  expect: {ok: true, consistent: true, matches: true}
+
+- id: log-of-length-is-flagged
+  input: {expr: "log(L)", units: {L: m}}
+  expect: {ok: true, consistent: false, contains: ["argument 'L' of log(ln) must be dimensionless"]}
+
+- id: exp-of-time-ratio-mixed-prefixes
+  input: {expr: "N0*exp(-t/tau)", units: {N0: "1", t: s, tau: ms}}
+  expect: {ok: true, consistent: true, contains: ['"dimension": "1 (dimensionless)"']}
+
+- id: dimensional-base-with-variable-exponent
+  input: {expr: "x**n", units: {x: m, n: "1"}}
+  expect: {ok: true, consistent: false, contains: ["the exponent must be a number"]}
+
+- id: ohms-law-value-in-milliampere
+  input: {expr: "V/R", units: {V: "12 V", R: "4 kΩ"}, expect: mA}
+  expect: {ok: true, matches: true, approx: 3.0, contains: ['"value": "3 mA"', '"si_unit": "A"']}
+
+- id: cube-root-of-volume
+  input: {expr: "cbrt(V)", units: {V: "8 m^3"}, expect: m}
+  expect: {ok: true, matches: true, approx: 2.0}
+
+- id: celsius-is-converted-to-kelvin-with-warning
+  input: {expr: "k*T", units: {k: "1.380649e-23 J/K", T: "25 degC"}, expect: J}
+  expect: {ok: true, matches: true, approx: 4.1164049935e-21, contains: ["absolute temperature 298.15 K", "delta_degC"]}
+
+- id: unused-unit-is-ignored-with-warning
+  input: {expr: "v*t", units: {v: "m/s", t: s, m: kg}, expect: m}
+  expect: {ok: true, matches: true, contains: ["Ignored units for variables not in expr: m"]}
+
+# ── 단위 변환 ─────────────────────────────────────────
+- id: convert-speed
+  input: {value: "72 km/h", to: "m/s"}
+  expect: {ok: true, approx: 20.0, contains: ['"result": "20 m/s"']}
+
+- id: convert-temperature-scale
+  input: {value: "25 degC", to: degF}
+  expect: {ok: true, approx: 77.0, contains: ['"result": "77 °F"']}
+
+- id: convert-to-si-with-named-unit
+  input: {value: "1500 kg*m/s^2"}
+  expect: {ok: true, approx: 1500.0, contains: ['"si_named": "1500 N"']}
+
+# ── 고칠 입력 ─────────────────────────────────────────
+- id: convert-between-different-dimensions
+  input: {value: "3 kg", to: m}
+  expect: {ok: false, errors_contain: ["M (mass)", "L (length)", "Cannot convert"]}
+
+- id: unknown-unit-name
+  input: {expr: "Q/t", units: {Q: foo, t: s}}
+  expect: {ok: false, errors_contain: ["units[Q] 'foo': unknown unit 'foo'"]}
+
+- id: missing-unit-for-variable
+  input: {expr: "m*g", units: {m: kg}}
+  expect: {ok: false, errors_contain: ["No unit given in units for: g"]}
+
+- id: hangul-unit-rejected-on-server
+  input: {expr: "2*h", units: {h: 미터}}
+  expect: {ok: false, errors_contain: ["character '미' is not allowed", "미터→m"]}
+
+- id: both-modes-at-once
+  input: {expr: "v*t", units: {v: "m/s", t: s}, value: "3 m"}
+  expect: {ok: false, errors_contain: ["exactly one of"]}
+
+- id: expression-syntax-error
+  input: {expr: "|x|", units: {x: m}}
+  expect: {ok: false, errors_contain: ["abs(x)"]}
+
+- id: expect-must-not-have-number
+  input: {expr: "h", units: {h: m}, expect: "2 m"}
+  expect: {ok: false, errors_contain: ["only a unit, no number"]}

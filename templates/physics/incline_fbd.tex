@@ -1,0 +1,36 @@
+% title: 경사면 위 물체의 자유물체도
+% description: 경사각 θ인 빗면 위 물체에 작용하는 중력 mg, 수직항력 N, 마찰력 f와 중력의 빗면 방향·수직 방향 성분
+% packages:
+% libraries: arrows.meta, calc
+\begin{tikzpicture}[
+    force/.style={very thick, -{Stealth[length=3mm]}},
+    comp/.style={thin, dashed, -{Stealth[length=2mm]}}]
+  \def\ang{30}   % 경사각 θ (도)
+  \def\W{8}      % 빗면 밑변 길이
+  \def\mg{2.4}   % 중력 화살표 길이
+  \coordinate (A) at (0,0);
+  \coordinate (B) at (\W,0);
+  \coordinate (C) at (\W,{\W*tan(\ang)});
+  \fill[gray!15] (A) -- (B) -- (C) -- cycle;
+  \draw[thick] (A) -- (B) -- (C) -- cycle;
+  % 물체: 빗면을 따라 놓인 상자, G는 질량중심
+  \begin{scope}[shift={($(A)!0.6!(C)$)}, rotate=\ang]
+    \draw[thick, fill=blue!10] (-0.6,0) rectangle (0.6,0.8);
+    \coordinate (G) at (0,0.4);
+  \end{scope}
+  % 힘 (모두 질량중심에서 시작)
+  \draw[force] (G) -- ++(0,-\mg) coordinate (Wg) node[below] {$m\vec{g}$};
+  \draw[force] (G) -- ++(90+\ang:{\mg*cos(\ang)}) node[above left] {$\vec{N}$};
+  \draw[force] (G) -- ++(\ang:{\mg*sin(\ang)}) node[above] {$\vec{f}$}; % 미끄러지려는 쪽의 반대
+  % 중력의 성분 (점선)
+  \draw[comp] (G) -- ++(180+\ang:{\mg*sin(\ang)}) coordinate (Wx)
+    node[above left] {$mg\sin\theta$};
+  \draw[comp] (G) -- ++(\ang-90:{\mg*cos(\ang)}) coordinate (Wy)
+    node[right] {$mg\cos\theta$};
+  \draw[very thin, dashed] (Wx) -- (Wg) -- (Wy);
+  % 각도 표시
+  \draw (A) ++(1.2,0) arc[start angle=0, end angle=\ang, radius=1.2];
+  \node at ($(A)+(\ang/2:1.55)$) {$\theta$};
+  \draw (G) ++(0,-0.8) arc[start angle=-90, end angle=\ang-90, radius=0.8];
+  \node at ($(G)+(-90+\ang/2:1.05)$) {$\theta$};
+\end{tikzpicture}

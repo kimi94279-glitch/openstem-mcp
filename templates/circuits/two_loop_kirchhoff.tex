@@ -1,0 +1,13 @@
+% title: 두 고리 회로 (키르히호프 법칙)
+% description: 전지 두 개와 저항 세 개로 된 두 고리 회로. 가운데 갈림점에서 I_1 + I_2 = I_3. 키르히호프 법칙 문제용
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}
+  \draw (0,0) to[battery1, l=$\mathcal{E}_1$, invert] (0,3)
+        to[R, l=$R_1$, i>_=$I_1$] (4,3)
+        to[R, l=$R_3$, i>_=$I_3$, *-*] (4,0)
+        -- (0,0);
+  \draw (8,0) to[battery1, l_=$\mathcal{E}_2$, invert] (8,3)
+        to[R, l_=$R_2$, i>^=$I_2$] (4,3);
+  \draw (8,0) -- (4,0);
+\end{circuitikz}

@@ -1,0 +1,33 @@
+% title: 두 줄에 매달린 물체
+% description: 천장에 각 θ₁, θ₂로 매단 두 줄에 걸린 물체의 장력 T₁, T₂와 중력 mg (화살표 길이는 평형 조건으로 계산)
+% packages:
+% libraries: arrows.meta, calc, patterns
+\begin{tikzpicture}[
+    force/.style={very thick, -{Stealth[length=3mm]}},
+    rope/.style={thick, brown!70!black}]
+  \def\aA{40}    % 왼쪽 줄이 천장과 이루는 각 θ₁ (도)
+  \def\aB{60}    % 오른쪽 줄이 천장과 이루는 각 θ₂ (도)
+  \def\h{3.2}    % 매단 점에서 천장까지 높이
+  \def\mg{2.4}   % 중력 화살표 길이
+  % 평형: T₁ = mg cos θ₂ / sin(θ₁+θ₂),  T₂ = mg cos θ₁ / sin(θ₁+θ₂)
+  \pgfmathsetmacro\Ta{\mg*cos(\aB)/sin(\aA+\aB)}
+  \pgfmathsetmacro\Tb{\mg*cos(\aA)/sin(\aA+\aB)}
+  \coordinate (P) at (0,0);                              % 줄을 맨 점
+  \coordinate (A) at ($(P)+(180-\aA:{\h/sin(\aA)})$);   % 왼쪽 천장 고정점
+  \coordinate (B) at ($(P)+(\aB:{\h/sin(\aB)})$);       % 오른쪽 천장 고정점
+  % 천장, 줄, 물체
+  \fill[pattern=north east lines] ($(A)+(-0.6,0)$) rectangle ($(B)+(0.6,0.25)$);
+  \draw[thick] ($(A)+(-0.6,0)$) -- ($(B)+(0.6,0)$);
+  \draw[rope] (A) -- (P) -- (B);
+  \draw[thick, fill=blue!10] (-0.6,-1) rectangle (0.6,0);
+  \coordinate (G) at (0,-0.5);
+  % 힘: 장력은 줄을 따라 물체에서 멀어지는 쪽
+  \draw[force] (P) -- ++(180-\aA:\Ta) node[below left] {$\vec{T}_1$};
+  \draw[force] (P) -- ++(\aB:\Tb) node[right] {$\vec{T}_2$};
+  \draw[force] (G) -- ++(0,-\mg) node[below] {$m\vec{g}$};
+  % 각도 표시 (천장 기준)
+  \draw (A) ++(0.8,0) arc[start angle=0, end angle=-\aA, radius=0.8];
+  \node at ($(A)+(-\aA/2:1.1)$) {$\theta_1$};
+  \draw (B) ++(-0.8,0) arc[start angle=180, end angle=180+\aB, radius=0.8];
+  \node at ($(B)+(180+\aB/2:1.1)$) {$\theta_2$};
+\end{tikzpicture}

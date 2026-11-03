@@ -1,0 +1,27 @@
+% title: 개념도 (개념 사이 관계)
+% description: 역학적 에너지를 중심으로 운동 에너지·위치 에너지(중력·탄성)·일·보존 조건을 상자로 놓고, 연결선 위에 관계를 짧은 말로 적은 개념도
+% packages:
+% libraries: arrows.meta, positioning
+% 개념은 concept 상자, 관계 말은 연결선 가운데 rel 노드(흰 바탕)로 단다. 위치는 below=of, left=of 등으로 잡고
+% 선이 상자를 가로지르면 상자 위치를 옮긴다. 중심 개념은 main 스타일로 강조한다.
+\begin{tikzpicture}[
+    node distance=13mm and 10mm,
+    font=\sffamily\small,
+    concept/.style={draw, thick, rounded corners=3pt, fill=blue!6, align=center, inner sep=4pt},
+    main/.style={concept, fill=orange!18, very thick},
+    link/.style={thick, -{Stealth[length=2.3mm]}, gray!60!black},
+    rel/.style={font=\sffamily\footnotesize, fill=white, inner sep=1.5pt, align=center}]
+  \node[main] (E) {역학적 에너지\\$E = K + U$};
+  \node[concept, below left=14mm and 12mm of E] (K) {운동 에너지\\$K = \frac{1}{2}mv^2$};
+  \node[concept, below right=14mm and 12mm of E] (U) {위치 에너지 $U$};
+  \node[concept, below left=13mm and -8mm of U] (Ug) {중력\\$U = mgh$};
+  \node[concept, below right=13mm and -8mm of U] (Us) {탄성\\$U = \frac{1}{2}kx^2$};
+  \node[concept, below=18mm of K] (W) {일\\$W = Fs\cos\theta$};
+  \node[concept, right=14mm of E] (C) {보존: 보존력만 일하면\\$E$가 일정};
+  \draw[link] (E) -- node[rel] {나뉜다} (K);
+  \draw[link] (E) -- node[rel] {나뉜다} (U);
+  \draw[link] (U) -- node[rel] {종류} (Ug);
+  \draw[link] (U) -- node[rel] {종류} (Us);
+  \draw[link] (W) -- node[rel] {일-에너지 정리\\$W_{\text{알짜}} = \Delta K$} (K);
+  \draw[link] (E) -- node[rel] {조건} (C);
+\end{tikzpicture}

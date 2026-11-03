@@ -1,0 +1,11 @@
+% title: RC 직렬회로
+% description: 전지·스위치·저항·축전기를 직렬로 이은 충전 회로. 전류 방향 표시
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}
+  \draw (0,0) to[battery1, l=$\mathcal{E}$, invert] (0,3)
+        to[nos, l=$S$] (3,3)
+        to[R, l=$R$, i>_=$I$] (6,3)
+        to[C, l=$C$] (6,0)
+        -- (0,0);
+\end{circuitikz}

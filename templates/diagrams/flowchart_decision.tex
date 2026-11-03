@@ -1,0 +1,36 @@
+% title: 순서도 (조건 분기·반복)
+% description: 이분법으로 f(x)=0의 근을 찾는 알고리즘 순서도. 시작·끝(둥근 상자), 입력·출력(평행사변형), 처리(사각형), 판단(마름모)과 예/아니오 분기, 되돌아가는 반복 화살표
+% packages:
+% libraries: arrows.meta, positioning, shapes.geometric
+% 상자는 below=of / right=of로 쌓고, 상자 안 글만 바꾼다. 꺾이는 화살표는 |-(세로 먼저)나 -|(가로 먼저)로 그린다.
+% 반복은 판단 상자의 west에서 왼쪽으로 나가 위의 처리 상자 west로 돌아오게 한다.
+\begin{tikzpicture}[
+    node distance=6mm and 14mm,
+    font=\sffamily\small,
+    base/.style={draw, thick, minimum width=32mm, minimum height=8mm, align=center},
+    term/.style={base, rounded corners=4mm, fill=gray!15},
+    io/.style={base, trapezium, trapezium stretches body, trapezium left angle=72, trapezium right angle=108, fill=blue!8},
+    proc/.style={base, fill=orange!12},
+    dec/.style={draw, thick, diamond, aspect=2.6, inner sep=1pt, align=center, fill=green!10},
+    arrow/.style={thick, -{Stealth[length=2.5mm]}},
+    lab/.style={font=\sffamily\footnotesize, inner sep=2pt}]
+  \node[term] (start) {시작};
+  \node[io, below=of start] (in) {$a,\ b,\ \varepsilon$ 입력};
+  \node[proc, below=of in] (mid) {$c \leftarrow (a+b)/2$};
+  \node[dec, below=of mid] (sign) {$f(a)\,f(c) < 0$\,?};
+  \node[proc, below=of sign] (upa) {$a \leftarrow c$};
+  \node[proc, right=of sign, minimum width=20mm] (upb) {$b \leftarrow c$};
+  \node[dec, below=of upa] (stop) {$b - a < \varepsilon$\,?};
+  \node[io, below=of stop] (out) {근 $c$ 출력};
+  \node[term, below=of out] (end) {끝};
+  \draw[arrow] (start) -- (in);
+  \draw[arrow] (in) -- (mid);
+  \draw[arrow] (mid) -- (sign);
+  \draw[arrow] (sign) -- node[lab, above] {예} (upb);
+  \draw[arrow] (sign) -- node[lab, right] {아니오} (upa);
+  \draw[arrow] (upa) -- (stop);
+  \draw[arrow] (upb) |- (stop);
+  \draw[arrow] (stop) -- node[lab, right] {예} (out);
+  \draw[arrow] (out) -- (end);
+  \draw[arrow] (stop.west) -- node[lab, above] {아니오} ++(-1.4,0) |- (mid.west);
+\end{tikzpicture}

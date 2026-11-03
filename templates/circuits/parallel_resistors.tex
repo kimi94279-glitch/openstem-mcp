@@ -1,0 +1,13 @@
+% title: 저항 병렬연결
+% description: 전지에 저항 두 개를 병렬로 이은 회로. 전체 전류 I가 갈림점에서 가지 전류 I_1, I_2로 나뉜다
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}
+  \draw (0,0) to[battery1, l=$\mathcal{E}$, invert] (0,3)
+        to[short, i=$I$, -*] (3,3)
+        to[R, l=$R_1$, i>_=$I_1$] (3,0);
+  \draw (3,3) -- (6,3)
+        to[R, l=$R_2$, i>_=$I_2$] (6,0)
+        -- (0,0);
+  \draw (3,0) node[circ] {};
+\end{circuitikz}

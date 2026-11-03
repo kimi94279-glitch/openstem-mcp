@@ -1,0 +1,172 @@
+# plot_function 입력 → 기대 결과
+# expect.ok: 성공 여부 / parsed: series[].parsed (순서대로) / warnings_contain: warnings를 합친 문자열에 들어 있어야 할 조각
+# errors_contain: errors를 합친 문자열에 들어 있어야 할 조각 / no_warnings: 경고 없음
+
+- id: damped-oscillation-hangul-labels
+  input:
+    series: [{expr: "sin(x)*exp(-x/5)", label: 감쇠 진동}]
+    x_range: [0, 20]
+    title: 감쇠 진동
+    x_label: 시간 $t$ (s)
+    y_label: 변위 $y$
+  expect: {ok: true, no_warnings: true, parsed: ["exp(-x/5)*sin(x)"]}
+
+- id: implicit-multiplication-and-caret
+  input:
+    series: [{expr: "2x^2 + 3x"}]
+    x_range: [-3, 3]
+  expect: {ok: true, no_warnings: true, parsed: ["2*x**2 + 3*x"]}
+
+- id: tan-asymptotes-exact
+  input:
+    series: [{expr: "tan(x)"}]
+    x_range: [-3.2, 3.2]
+  expect: {ok: true, warnings_contain: ["-π/2", "π/2(≈1.571)", "diverges", "y-axis clipped"]}
+
+- id: reciprocal-pole
+  input:
+    series: [{expr: "1/x"}]
+    x_range: [-5, 5]
+  expect: {ok: true, warnings_contain: ["diverges at x = 0"]}
+
+- id: sqrt-domain-gap
+  input:
+    series: [{expr: "sqrt(x)"}]
+    x_range: [-4, 4]
+  expect: {ok: true, warnings_contain: ["no real values for x = -4 ~ 0"]}
+
+- id: log-pole-and-gap
+  input:
+    series: [{expr: "ln(x)"}]
+    x_range: [-2, 3]
+  expect: {ok: true, warnings_contain: ["diverges at x = 0", "no real values for x = -2 ~ 0"]}
+
+- id: removable-hole
+  input:
+    series: [{expr: "sin(x)/x"}]
+    x_range: [-10, 10]
+  expect: {ok: true, warnings_contain: ["single point x = 0"]}
+
+- id: removable-hole-rational
+  input:
+    series: [{expr: "(x**2-1)/(x-1)"}]
+    x_range: [-2, 3]
+  expect: {ok: true, warnings_contain: ["single point x = 1"]}
+
+# 좌우 값이 다른 점은 구멍이 아니라 불연속: 선을 끊고 왼쪽 → 오른쪽 값을 알려준다
+- id: abs-over-x-jump
+  input:
+    series: [{expr: "abs(x)/x"}]
+    x_range: [-2, 2.001]
+  expect: {ok: true, warnings_contain: ["jumps at x = 0(-1 → 1) (discontinuity"]}
+
+- id: abs-over-x-jump-on-grid
+  input:
+    series: [{expr: "abs(x)/x"}]
+    x_range: [-2, 2]
+  expect: {ok: true, warnings_contain: ["jumps at x = 0(-1 → 1)"]}
+
+- id: floor-jumps
+  input:
+    series: [{expr: "floor(x)"}]
+    x_range: [-2.5, 2.5]
+  expect: {ok: true, warnings_contain: ["jumps at x = -2(-3 → -2), -1(-2 → -1), 0(-1 → 0), 1(0 → 1), 2(1 → 2)"]}
+
+- id: steep-but-continuous
+  input:
+    series: [{expr: "atan(1000x)"}]
+    x_range: [-2, 2]
+  expect: {ok: true, no_warnings: true}
+
+- id: data-points-with-curve
+  input:
+    series: [{expr: "1 - exp(-x)", label: 이론}]
+    x_range: [0, 5]
+    points: [{x: [0, 1, 2, 3], y: [0.02, 0.6, 0.85, 0.97], label: 측정값}]
+  expect: {ok: true, no_warnings: true}
+
+- id: abs-bars-rejected
+  input:
+    series: [{expr: "|x|"}]
+    x_range: [-1, 1]
+  expect: {ok: false, errors_contain: ["abs(x)"]}
+
+- id: unknown-variable
+  input:
+    series: [{expr: "a*x"}]
+    x_range: [-1, 1]
+  expect: {ok: false, errors_contain: ["Variable 'a'"]}
+
+- id: code-injection-rejected
+  input:
+    series: [{expr: "__import__('os').system('echo hi')"}]
+    x_range: [-1, 1]
+  expect: {ok: false, errors_contain: ["'_' is not allowed"]}
+
+- id: attribute-access-rejected
+  input:
+    series: [{expr: "x.real"}]
+    x_range: [-1, 1]
+  expect: {ok: false, errors_contain: ["'.' is not allowed"]}
+
+- id: reversed-x-range
+  input:
+    series: [{expr: "x"}]
+    x_range: [3, 1]
+  expect: {ok: false, errors_contain: ["x_range"]}
+
+- id: pi-range-strings
+  input:
+    series: [{expr: "sin(x)"}]
+    x_range: [0, "2*pi"]
+    y_range: ["-pi/2", "pi/2"]
+  expect: {ok: true, no_warnings: true}
+
+- id: range-string-with-variable
+  input:
+    series: [{expr: "x"}]
+    x_range: [0, "2*x"]
+  expect: {ok: false, errors_contain: ["x_range[1] '2*x'", "variables"]}
+
+- id: range-string-not-real
+  input:
+    series: [{expr: "x"}]
+    x_range: [0, "sqrt(-1)"]
+  expect: {ok: false, errors_contain: ["x_range[1] 'sqrt(-1)': not a finite real number"]}
+
+- id: reversed-range-strings
+  input:
+    series: [{expr: "x"}]
+    x_range: ["pi", "pi/2"]
+  expect: {ok: false, errors_contain: ["x_range: the first value must be less"]}
+
+- id: emoji-in-math-label
+  input:
+    series: [{expr: "x", label: "로켓 $v$ 🚀"}]
+    x_range: [0, 1]
+  expect: {ok: true, warnings_contain: ["missing from the font", "U+1F680"]}
+
+- id: no-real-values-anywhere
+  input:
+    series: [{expr: "sqrt(x)"}]
+    x_range: [-5, -1]
+  expect: {ok: false, errors_contain: ["no real values anywhere"]}
+
+- id: undefined-constant-expression
+  input:
+    series: [{expr: "1/0 + x"}]
+    x_range: [0, 1]
+  expect: {ok: false, errors_contain: ["undefined"]}
+
+- id: broken-mathtext-label
+  input:
+    series: [{expr: "x", label: "$\\frac{1}{x$"}]
+    x_range: [0, 1]
+  expect: {ok: false, errors_contain: ["series[0].label"]}
+
+- id: points-length-mismatch
+  input:
+    series: []
+    x_range: [0, 1]
+    points: [{x: [0, 1], y: [0]}]
+  expect: {ok: false, errors_contain: ["lengths differ"]}

@@ -1,0 +1,38 @@
+% title: 신호 처리 사슬 (데이터 흐름)
+% description: 센서 → 증폭기 → 저역 통과 필터 → ADC(표본화) → 디지털 처리로 흐르는 신호. 화살표마다 위에 신호 모양(잡음 섞인 신호, 매끈한 신호, 표본)을 작게 그리고 아래에 기호 x(t), x[n]을 단다
+% packages:
+% libraries: arrows.meta, calc, positioning
+% 블록 이름과 신호 기호만 바꾼다. 신호 모양은 \sketch 좌표계(가로 0~1, 세로 -1~1)에 그린다.
+\begin{tikzpicture}[
+    node distance=13mm,
+    font=\sffamily\small,
+    block/.style={draw, thick, rounded corners=2pt, fill=teal!8, minimum width=17mm, minimum height=11mm, align=center},
+    arrow/.style={thick, -{Stealth[length=2.5mm]}},
+    sig/.style={font=\footnotesize}]
+  \node[block] (sensor) {센서};
+  \node[block, right=of sensor] (amp) {증폭기};
+  \node[block, right=of amp] (lpf) {저역 통과\\필터};
+  \node[block, right=of lpf] (adc) {ADC\\(표본화)};
+  \node[block, right=of adc] (dsp) {디지털\\처리};
+  \draw[arrow] (sensor) -- node[below, sig] {$x(t)$} (amp);
+  \draw[arrow] (amp) -- node[below, sig] {$G\,x(t)$} (lpf);
+  \draw[arrow] (lpf) -- node[below, sig] {$\tilde{x}(t)$} (adc);
+  \draw[arrow] (adc) -- node[below, sig] {$x[n]$} (dsp);
+  % 신호 모양: 화살표 가운데 위(가로 9mm, 세로 ±2.5mm)
+  \begin{scope}[shift={($(sensor.east)!0.5!(amp.west)+(-4.5mm,5.5mm)$)}, x=9mm, y=1.2mm]
+    \draw[blue!70!black, domain=0:1, samples=80, smooth] plot (\x, {sin(720*\x) + 0.4*sin(4700*\x)});
+  \end{scope}
+  \begin{scope}[shift={($(amp.east)!0.5!(lpf.west)+(-4.5mm,5.5mm)$)}, x=9mm, y=2.2mm]
+    \draw[blue!70!black, domain=0:1, samples=80, smooth] plot (\x, {sin(720*\x) + 0.4*sin(4700*\x)});
+  \end{scope}
+  \begin{scope}[shift={($(lpf.east)!0.5!(adc.west)+(-4.5mm,5.5mm)$)}, x=9mm, y=2.2mm]
+    \draw[blue!70!black, domain=0:1, samples=60, smooth] plot (\x, {sin(720*\x)});
+  \end{scope}
+  \begin{scope}[shift={($(adc.east)!0.5!(dsp.west)+(-4.5mm,5.5mm)$)}, x=9mm, y=2.2mm]
+    \draw[gray] (0,0) -- (1,0);
+    \foreach \k in {0,...,10} {
+      \draw[blue!70!black] (\k/10,0) -- (\k/10,{sin(72*\k)});
+      \fill[blue!70!black] (\k/10,{sin(72*\k)}) circle[radius=0.5pt];
+    }
+  \end{scope}
+\end{tikzpicture}

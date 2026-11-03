@@ -1,0 +1,26 @@
+% title: 유한 상태 기계 (상태 전이도)
+% description: 이진수를 앞자리부터 읽어 3의 배수인지 판별하는 DFA. 상태 r0·r1·r2(나머지), 시작 화살표, 받아들이는 상태(이중 원), 자기 루프와 양방향 전이에 입력 0/1 라벨
+% packages:
+% libraries: arrows.meta, automata, positioning
+% 상태는 node[state], 시작은 initial, 받아들이는 상태는 accepting. 전이는 edge[bend left]·edge[loop above]로 잇는다.
+% 두 상태가 서로 오가면 양쪽 모두 bend left를 써서 겹치지 않게 한다.
+\begin{tikzpicture}[
+    node distance=30mm,
+    on grid,
+    >={Stealth[length=2.5mm]},
+    every state/.style={thick, fill=yellow!10, minimum size=11mm},
+    initial text={시작},
+    every edge/.style={draw, thick},
+    lab/.style={font=\small, inner sep=2pt}]
+  \node[state, initial, accepting] (r0) {$r_0$};
+  \node[state, right=of r0] (r1) {$r_1$};
+  \node[state, right=of r1] (r2) {$r_2$};
+  \path[->]
+    (r0) edge[loop above] node[lab, above] {0} ()
+         edge[bend left] node[lab, above] {1} (r1)
+    (r1) edge[bend left] node[lab, below] {1} (r0)
+         edge[bend left] node[lab, above] {0} (r2)
+    (r2) edge[bend left] node[lab, below] {0} (r1)
+         edge[loop above] node[lab, above] {1} ();
+  \node[font=\sffamily\footnotesize, align=center, below=17mm of r1] {$r_k$: 지금까지 읽은 수를 3으로 나눈 나머지가 $k$\\받아들이는 상태: $r_0$ (3의 배수)};
+\end{tikzpicture}

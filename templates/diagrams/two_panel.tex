@@ -1,0 +1,33 @@
+% title: 두 칸 그림 (a)·(b)
+% description: 등가속도 운동의 (a) 위치-시간 그래프와 (b) 속도-시간 그래프를 나란히 놓은 두 칸 그림. (b)의 넓이가 변위임을 색칠로 표시하고, 칸마다 아래에 (a)·(b) 설명
+% packages:
+% libraries: arrows.meta
+% 두 칸은 scope[xshift=...]로 나란히 둔다. 각 칸은 같은 크기(가로 \W, 세로 \H)의 축을 쓰고, 칸 설명은 축 아래 node로 단다.
+% 칸을 셋으로 늘리려면 scope를 하나 더 복사해 xshift를 2배로 한다.
+\begin{tikzpicture}[
+    font=\small,
+    axis/.style={thick, -{Stealth[length=2.5mm]}},
+    curve/.style={very thick, blue!70!black},
+    paneltitle/.style={font=\sffamily\small, align=center}]
+  \def\W{4.2}  % 축 가로 길이(cm)
+  \def\H{3.0}  % 축 세로 길이(cm)
+  % (a) 위치-시간: x = x0 + v0 t + a t^2 / 2
+  \begin{scope}
+    \draw[axis] (0,0) -- (\W,0) node[below left] {$t$};
+    \draw[axis] (0,0) -- (0,\H) node[below left] {$x$};
+    \draw[curve, domain=0:3.6, samples=40, smooth] plot (\x, {0.4 + 0.25*\x + 0.12*\x*\x});
+    \node[left] at (0,0.4) {$x_0$};
+    \node[paneltitle] at (\W/2,-0.8) {(a) 위치-시간 그래프};
+  \end{scope}
+  % (b) 속도-시간: v = v0 + a t, 넓이 = 변위
+  \begin{scope}[xshift=6.2cm]
+    \fill[orange!25] (0,0) -- (0,0.6) -- (3.6,{0.6+0.55*3.6}) -- (3.6,0) -- cycle;
+    \draw[axis] (0,0) -- (\W,0) node[below left] {$t$};
+    \draw[axis] (0,0) -- (0,\H) node[below left] {$v$};
+    \draw[curve] (0,0.6) -- (3.6,{0.6+0.55*3.6});
+    \draw[dashed] (3.6,0) node[below] {$t_1$} -- (3.6,{0.6+0.55*3.6});
+    \node[left] at (0,0.6) {$v_0$};
+    \node[font=\sffamily\footnotesize, align=center] at (2.0,0.75) {넓이 $=$ 변위\\$\Delta x$};
+    \node[paneltitle] at (\W/2,-0.8) {(b) 속도-시간 그래프};
+  \end{scope}
+\end{tikzpicture}

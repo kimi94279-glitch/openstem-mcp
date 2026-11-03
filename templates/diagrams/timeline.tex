@@ -1,0 +1,26 @@
+% title: 연표·진행 타임라인
+% description: 원자 모형의 변천(1897 전자 발견 ~ 1932 중성자 발견)을 가로 시간축 위에 표시. 사건은 축 위아래로 번갈아 놓고 축과 점선으로 잇는다
+% packages:
+% libraries: arrows.meta
+% \yr(연도 → x좌표 cm)의 기준 연도와 배율만 바꾸면 축 범위가 바뀐다.
+% 사건은 \foreach 목록의 {연도/높이/붙일 쪽/글}을 고친다. 축 위는 양수 높이와 south, 아래는 음수 높이와 north.
+% 이웃한 사건 글이 겹치면 높이를 1.0과 1.9처럼 번갈아 준다.
+\begin{tikzpicture}[font=\sffamily\small]
+  \def\yr#1{((#1)-1895)*0.36}  % 1895년이 0, 1년에 0.36 cm
+  \draw[very thick, -{Stealth[length=3mm]}] ({\yr{1895}},0) -- ({\yr{1938}},0) node[right] {연도};
+  \foreach \y in {1895,1905,...,1935} {
+    \draw[thick] ({\yr{\y}},0.12) -- ({\yr{\y}},-0.12) node[below, font=\sffamily\footnotesize] {\y};
+  }
+  \foreach \y/\h/\side/\what in {
+      1897/1.0/south/{톰슨\\전자 발견},
+      1904/-1.1/north/{톰슨 모형\\(푸딩 모형)},
+      1911/1.0/south/{러더퍼드\\원자핵 모형},
+      1913/-1.1/north/{보어 모형\\(궤도 양자화)},
+      1926/1.0/south/{슈뢰딩거\\파동 방정식},
+      1932/-1.1/north/{채드윅\\중성자 발견}} {
+    \draw[gray, dashed] ({\yr{\y}},0) -- ({\yr{\y}},\h);
+    \fill[blue!70!black] ({\yr{\y}},0) circle[radius=2.2pt];
+    \node[draw, rounded corners=2pt, fill=blue!6, align=center, font=\sffamily\footnotesize, anchor=\side]
+      at ({\yr{\y}},\h) {\textbf{\y}\\\what};
+  }
+\end{tikzpicture}

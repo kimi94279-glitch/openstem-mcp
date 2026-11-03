@@ -1,0 +1,23 @@
+% title: 직각삼각형과 삼각비
+% description: ∠C = 90°인 직각삼각형에서 각 θ(꼭짓점 A)에 대한 빗변·대변·이웃변과 sin, cos, tan 정의
+% packages: amsmath
+% libraries: angles, quotes
+% 밑변 길이 \w, 높이 \h만 바꾼다. 직각 표시는 right angle=A--C--B (직각 꼭짓점이 가운데).
+\begin{tikzpicture}[scale=1.1]
+  \def\w{4}
+  \def\h{3}
+  \coordinate (A) at (0,0);
+  \coordinate (C) at (\w,0);
+  \coordinate (B) at (\w,\h);
+  \draw[thick] (A) -- (C) -- (B) -- cycle;
+  \pic[draw, angle radius=3mm] {right angle=A--C--B};
+  \pic[draw, angle radius=9mm, angle eccentricity=1.35, "$\theta$"] {angle=C--A--B};
+  \node[below left]  at (A) {$A$};
+  \node[below right] at (C) {$C$};
+  \node[above right] at (B) {$B$};
+  \path (A) -- node[above, sloped] {빗변 $c$} (B);
+  \path (C) -- node[right] {대변 $a$} (B);
+  \path (A) -- node[below] {이웃변 $b$} (C);
+  \node[anchor=west, align=left] at (\w+1.6,\h/2)
+    {$\sin\theta=\dfrac{a}{c}$\\[6pt] $\cos\theta=\dfrac{b}{c}$\\[6pt] $\tan\theta=\dfrac{a}{b}$};
+\end{tikzpicture}

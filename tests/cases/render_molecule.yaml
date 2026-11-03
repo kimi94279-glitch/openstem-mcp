@@ -1,0 +1,67 @@
+# render_molecule 입력 → 기대 결과
+# expect.ok: 성공 여부 / formula, mol_weight(소수 둘째 자리까지 비교), balanced: 결과 값
+# errors_contain / warnings_contain: 합친 문자열에 들어 있어야 할 조각 / no_warnings: 경고 없음
+
+- id: aspirin-with-hangul-legend
+  input: {smiles: "CC(=O)Oc1ccccc1C(=O)O", legend: 아스피린}
+  expect: {ok: true, formula: C9H8O4, mol_weight: 180.16, no_warnings: true}
+
+- id: caffeine-with-atom-numbers
+  input: {smiles: "Cn1cnc2c1c(=O)n(C)c(=O)n2C", show_atom_numbers: true}
+  expect: {ok: true, formula: C8H10N4O2, mol_weight: 194.19, no_warnings: true}
+
+- id: ionic-fragments
+  input: {smiles: "[Na+].[Cl-]"}
+  expect: {ok: true, formula: ClNa}
+
+- id: charged-ion
+  input: {smiles: "CC(=O)[O-]"}
+  expect: {ok: true, formula: C2H3O2-}
+
+- id: esterification-with-catalyst
+  input: {smiles: "CCO.CC(=O)O>OS(=O)(=O)O>CCOC(C)=O.O", kind: reaction, legend: 에스터화 반응}
+  expect: {ok: true, balanced: true, no_warnings: true}
+
+- id: unbalanced-reaction-warns
+  input: {smiles: "[H][H].O=O>>O", kind: reaction}
+  expect: {ok: true, balanced: false, warnings_contain: ["O +1"]}
+
+- id: reaction-detected-from-arrow
+  input: {smiles: "C=C.[H][H]>>CC"}
+  expect: {ok: true, balanced: true, warnings_contain: ["kind=reaction"]}
+
+- id: pentavalent-carbon
+  input: {smiles: "CC(C)(C)(C)(C)C"}
+  expect: {ok: false, errors_contain: ["atom #2 (C, char 2)", "valence 4 allowed"]}
+
+- id: unclosed-parenthesis
+  input: {smiles: "CC(=O"}
+  expect: {ok: false, errors_contain: ["unclosed '('", "char 3"]}
+
+- id: unclosed-ring
+  input: {smiles: "C1CCCC"}
+  expect: {ok: false, errors_contain: ["unclosed ring bond"]}
+
+- id: pyrrole-needs-nH
+  input: {smiles: "c1ccnc1"}
+  expect: {ok: false, errors_contain: ["[nH]"]}
+
+- id: aromatic-outside-ring
+  input: {smiles: "CCc"}
+  expect: {ok: false, errors_contain: ["atom #3", "uppercase"]}
+
+- id: name-instead-of-smiles
+  input: {smiles: aspirin}
+  expect: {ok: false, errors_contain: ["char 1"], hint_contains: not a name}
+
+- id: bad-molecule-inside-reaction
+  input: {smiles: "CCO.CC(C)(C)(C)(C)C>>CCOC", kind: reaction}
+  expect: {ok: false, errors_contain: ["reactant 2"]}
+
+- id: reaction-kind-without-arrow
+  input: {smiles: CCO, kind: reaction}
+  expect: {ok: false, errors_contain: [">>"]}
+
+- id: empty-smiles
+  input: {smiles: "  "}
+  expect: {ok: false, errors_contain: ["is empty"]}

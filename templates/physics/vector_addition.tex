@@ -1,0 +1,22 @@
+% title: 벡터의 합 (평행사변형법·삼각형법)
+% description: 두 벡터 A, B를 한 점에서 그려 평행사변형을 완성하고 대각선으로 합 A+B를 나타낸 그림 (점선 B는 삼각형법: A의 끝에 B의 시작을 이음)
+% packages:
+% libraries: arrows.meta
+\begin{tikzpicture}[
+    vec/.style={very thick, -{Stealth[length=3mm]}},
+    copy/.style={thick, dashed, -{Stealth[length=2.5mm]}}]
+  \def\Ax{3.5}  \def\Ay{0.8}   % 벡터 A의 x, y 성분
+  \def\Bx{1.2}  \def\By{2.4}   % 벡터 B의 x, y 성분
+  \coordinate (O) at (0,0);
+  \coordinate (A) at (\Ax,\Ay);
+  \coordinate (B) at (\Bx,\By);
+  \coordinate (S) at (\Ax+\Bx,\Ay+\By);   % A + B의 끝
+  % 평행사변형의 나머지 두 변 (옮겨 그린 벡터)
+  \draw[copy, red!70!black] (A) -- (S) node[midway, right] {$\vec{B}$};
+  \draw[copy, blue!70!black] (B) -- (S) node[midway, above] {$\vec{A}$};
+  % 원래 벡터와 합
+  \draw[vec, blue!70!black] (O) -- (A) node[midway, below right] {$\vec{A}$};
+  \draw[vec, red!70!black] (O) -- (B) node[midway, left] {$\vec{B}$};
+  \draw[vec] (O) -- (S) node[pos=0.6, sloped, above] {$\vec{A}+\vec{B}$};
+  \fill (O) circle[radius=0.05] node[below left] {$O$};
+\end{tikzpicture}

@@ -1,0 +1,12 @@
+% title: 비반전 증폭기
+% description: 연산증폭기의 + 입력에 v_in을 넣고, - 입력에 접지 저항 R_1과 되먹임 저항 R_f를 달아 이득 1 + R_f/R_1을 만드는 회로
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}
+  \draw (0,0) node[op amp, noinv input up] (oa) {};
+  \draw (oa.+) to[short, -o] ++(-2,0) node[left] {$v_{\mathrm{in}}$};
+  \draw (oa.-) -- ++(-0.5,0) -- ++(0,-1.5) coordinate (n)
+        to[R, l_=$R_f$] (n -| oa.out) -- (oa.out);
+  \draw (n) to[R, l_=$R_1$, *-] ++(0,-2) node[ground] {};
+  \draw (oa.out) to[short, *-o] ++(1,0) node[right] {$v_{\mathrm{out}}$};
+\end{circuitikz}

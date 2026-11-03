@@ -1,0 +1,14 @@
+% title: 전압 분배 회로
+% description: 저항 두 개를 직렬로 잇고 아래 저항 양단에서 출력 전압을 꺼내는 회로
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}[american voltages]
+  \draw (0,0) to[battery1, l=$V_{\mathrm{in}}$, invert] (0,4)
+        -- (2,4)
+        to[R, l_=$R_1$] (2,2)
+        to[R, l_=$R_2$] (2,0)
+        -- (0,0);
+  \draw (2,2) to[short, *-o] (4,2);
+  \draw (2,0) to[short, *-o] (4,0);
+  \draw (4,2) to[open, v^=$V_{\mathrm{out}}$] (4,0);
+\end{circuitikz}

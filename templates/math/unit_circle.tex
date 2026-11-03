@@ -1,0 +1,27 @@
+% title: 단위원과 삼각함수
+% description: 반지름 1인 원 위의 점 P(cos θ, sin θ). 각 θ 호, cos θ(가로)와 sin θ(세로) 선분 표시
+% packages:
+% libraries: arrows.meta, angles, quotes
+% 각 \thetadeg(도)만 바꾼다(어느 사분면이든 그대로 동작). \R은 그림에서 반지름 1의 길이(cm).
+\begin{tikzpicture}[>={Stealth[length=2.5mm]}]
+  \def\thetadeg{55}
+  \def\R{3}
+  \coordinate (O) at (0,0);
+  \coordinate (X) at (\R,0);
+  \coordinate (P) at (\thetadeg:\R);
+  \coordinate (Q) at ({\R*cos(\thetadeg)},0);
+  \draw[->] (-\R-0.6,0) -- (\R+0.7,0) node[right] {$x$};
+  \draw[->] (0,-\R-0.6) -- (0,\R+0.7) node[above] {$y$};
+  \draw[thick] (O) circle[radius=\R];
+  \draw[thick] (O) -- node[above left] {$1$} (P);
+  \draw[very thick, blue] (O) -- node[below] {$\cos\theta$} (Q);
+  \draw[very thick, red] (Q) -- node[right] {$\sin\theta$} (P);
+  \pic[draw, angle radius=2.5mm] {right angle=O--Q--P};
+  \pic[draw, ->, angle radius=7mm, angle eccentricity=1.4, "$\theta$"] {angle=X--O--P};
+  \fill (P) circle[radius=2pt] node[above right] {$P(\cos\theta,\,\sin\theta)$};
+  \node[below left] at (O) {$O$};
+  \node[below right] at (\R,0) {$1$};
+  \node[above left] at (0,\R) {$1$};
+  \node[below left] at (-\R,0) {$-1$};
+  \node[below left] at (0,-\R) {$-1$};
+\end{tikzpicture}

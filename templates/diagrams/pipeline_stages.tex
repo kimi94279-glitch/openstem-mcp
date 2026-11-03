@@ -1,0 +1,28 @@
+% title: 파이프라인 단계도 (클록별 진행)
+% description: 5단계 명령어 파이프라인(IF, ID, EX, MEM, WB)에서 명령어 4개가 클록 사이클마다 한 칸씩 겹쳐 진행하는 모습. 행은 명령어, 열은 클록 사이클
+% packages:
+% libraries:
+% \foreach 목록에서 명령어(행)와 시작 클록(\s)을 고친다. 지연(stall)을 넣으려면 그 명령어의 \s를 늘리고
+% 빈 칸에 \node[stage, fill=gray!20] {지연}을 직접 그린다. 칸 크기는 \cw(가로)·\ch(세로) cm.
+\begin{tikzpicture}[
+    font=\sffamily\small,
+    stage/.style={draw, thick, minimum width=\cw cm, minimum height=\ch cm, inner sep=0pt}]
+  \def\cw{1.15}
+  \def\ch{0.7}
+  % 클록 번호(열 머리)
+  \foreach \c in {1,...,8} {
+    \node[font=\sffamily\footnotesize] at ({\c*\cw},0) {\c};
+  }
+  \node[font=\sffamily\footnotesize, anchor=east] at (0.3,0) {클록 사이클};
+  % 행: 명령어 이름 / 시작 클록
+  \foreach \name/\s [count=\r] in {{lw x1, 0(x2)}/1, {add x3, x4, x5}/2, {sub x6, x7, x8}/3, {sw x9, 4(x2)}/4} {
+    \node[anchor=east, font=\ttfamily\small] at (0.3,{-\r*\ch*1.25}) {\name};
+    \foreach \st/\col [count=\k from 0] in {IF/blue!15, ID/green!15, EX/orange!20, MEM/red!12, WB/violet!15} {
+      \node[stage, fill=\col] at ({(\s+\k)*\cw},{-\r*\ch*1.25}) {\st};
+    }
+  }
+  % 한 클록(4열)을 세로로 강조: 그 클록에 동시에 진행 중인 단계들
+  \draw[thick, dashed, red!70!black] ({4.5*\cw},-0.25) -- ({4.5*\cw},{-4.6*\ch*1.25});
+  \draw[thick, dashed, red!70!black] ({3.5*\cw},-0.25) -- ({3.5*\cw},{-4.6*\ch*1.25});
+  \node[font=\sffamily\footnotesize, text=red!70!black, anchor=north] at ({4*\cw},{-4.6*\ch*1.25}) {클록 4: 네 명령어가 동시에 진행};
+\end{tikzpicture}

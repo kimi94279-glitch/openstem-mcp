@@ -1,0 +1,11 @@
+% title: RL 직렬회로
+% description: 전지·스위치·저항·코일을 직렬로 이은 회로. 스위치를 닫은 뒤 전류가 서서히 늘어나는 과도 현상용. 전류 방향 표시
+% packages: circuitikz
+% libraries:
+\begin{circuitikz}
+  \draw (0,0) to[battery1, l=$\mathcal{E}$, invert] (0,3)
+        to[nos, l=$S$] (3,3)
+        to[R, l=$R$, i>_=$I$] (6,3)
+        to[L, l=$L$] (6,0)
+        -- (0,0);
+\end{circuitikz}

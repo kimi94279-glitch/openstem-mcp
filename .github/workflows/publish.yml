@@ -1,0 +1,39 @@
+# GitHub에서 릴리스를 만들면 PyPI에 올리고, Claude Desktop 원클릭 설치 파일(.mcpb)을 릴리스에 붙인다.
+# PyPI는 신뢰할 수 있는 게시(토큰 없이 OIDC). 처음 한 번 pypi.org → Account settings → Publishing에서
+# pending publisher를 추가한다:
+#   PyPI Project Name: openstem-mcp / Owner: (GitHub 계정) / Repository: openstem-mcp
+#   Workflow name: publish.yml / Environment name: pypi
+name: Publish
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv build
+      - run: uv publish --trusted-publishing always
+
+  bundle:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 릴리스에 파일 올리기
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # 공식 CLI(npx @anthropic-ai/mcpb)로 검사·묶기. 빌드 스크립트는 표준 라이브러리만 쓴다.
+      - run: uv run --no-project python scripts/build_mcpb.py
+      - run: gh release upload "${{ github.event.release.tag_name }}" dist/*.mcpb
+        env:
+          GH_TOKEN: ${{ github.token }}
