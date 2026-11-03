@@ -5,7 +5,8 @@
     uv run python scripts/build_mcpb.py --icon     # packaging/mcpb/icon.png를 다시 그린다
 
 MCPB manifest 0.4의 server.type "uv": 묶음에는 소스만 넣고, 의존성은 호스트가 pyproject.toml·uv.lock으로 설치한다
-(`uv run --frozen --no-dev --extra latex`, dev 그룹은 설치하지 않는다). 묶음 안 배치는 저장소와 같다
+(`uv run --frozen --no-dev --extra latex`, dev 그룹은 설치하지 않는다). Python 버전은 묶음 루트의 `.python-version`이 정한다.
+묶음 안 배치는 저장소와 같다
 (pyproject가 루트의 templates/를 wheel에 force-include하고, 편집 설치에서는 tools/templates.py가 루트 templates/를 찾는다).
 """
 
@@ -25,9 +26,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[1]
 PACKAGING = REPO / "packaging" / "mcpb"
-MCPB_CLI = "@anthropic-ai/mcpb"
+# 공식 CLI는 정확한 버전으로 고정한다(npx가 그때그때 최신을 받아 실행하지 않게). 올릴 때는 `npm view @anthropic-ai/mcpb version`.
+MCPB_CLI = "@anthropic-ai/mcpb@2.1.2"
 
-ROOT_FILES = ["pyproject.toml", "uv.lock", "README.md", "LICENSE"]
+# .python-version: 호스트(Claude Desktop)의 uv가 rdkit·pymupdf wheel이 있는 Python을 쓰게 고정한다.
+# 없으면 호스트가 고른 새 Python에서 wheel이 없어 설치가 실패한 사례가 있었다.
+ROOT_FILES = ["pyproject.toml", "uv.lock", ".python-version", "README.md", "LICENSE"]
 TREES = ["src/openstem", "templates"]
 PACKAGING_FILES = ["launch.py", "icon.png", ".mcpbignore"]
 SKIP_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".venv"}

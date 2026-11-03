@@ -51,7 +51,7 @@ def test_bundle_file_list(bundle):
     with zipfile.ZipFile(bundle.path) as zf:
         names = set(zf.namelist())
     required = {
-        "manifest.json", "launch.py", "icon.png", "pyproject.toml", "uv.lock", "README.md", "LICENSE",
+        "manifest.json", "launch.py", "icon.png", "pyproject.toml", "uv.lock", ".python-version", "README.md", "LICENSE",
         "src/openstem/__init__.py", "src/openstem/server.py", "src/openstem/render/tectonic_setup.py",
         "src/openstem/render/exam.lua", "src/openstem/workers/verify.py", "src/openstem/prompts/solve.md",
     }  # fmt: skip
@@ -69,6 +69,27 @@ def test_bundle_file_list(bundle):
         assert not name.startswith(("tests/", ".venv/", "examples/", "dist/", "scripts/", "packaging/", ".github/"))
         assert "__pycache__" not in name and not name.endswith((".pyc", ".pyo"))
     assert ".mcpbignore" not in names  # 공식 CLI도 넣지 않는다
+
+
+def test_bundle_pins_python_version(bundle):
+    """호스트의 uv가 아무 Python이나 고르지 않게 .python-version을 넣는다. requires-python을 만족하고 lock에 wheel이 있어야 한다."""
+    import tomllib
+
+    with zipfile.ZipFile(bundle.path) as zf:
+        pinned = zf.read(".python-version").decode("utf-8").strip()
+    assert pinned == (REPO / ".python-version").read_text(encoding="utf-8").strip()
+    major, minor = (int(x) for x in pinned.split(".")[:2])
+    lower = re.search(r">=\s*3\.(\d+)", tomllib.loads((REPO / "pyproject.toml").read_text(encoding="utf-8"))["project"]["requires-python"])
+    assert major == 3 and minor >= int(lower.group(1))
+    lock = tomllib.loads((REPO / "uv.lock").read_text(encoding="utf-8"))
+    for name in ("rdkit", "pymupdf"):
+        wheels = [w["url"] for p in lock["package"] if p["name"] == name for w in p.get("wheels", [])]
+        assert any(f"-cp3{minor}-" in w or "-abi3-" in w for w in wheels), f"{name}: Python {pinned}용 wheel이 lock에 없다"
+
+
+def test_mcpb_cli_is_pinned():
+    builder = _load_builder()
+    assert re.fullmatch(r"@anthropic-ai/mcpb@\d+\.\d+\.\d+", builder.MCPB_CLI)
 
 
 def test_manifest_fields(manifest):

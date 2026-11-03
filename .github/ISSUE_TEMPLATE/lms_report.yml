@@ -1,0 +1,61 @@
+name: 학교 LMS 확인 보고
+description: 우리 학교 LMS에서 lms 툴이 되는지(또는 안 되는지) 알려 주기
+labels: [lms]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        실제 학교에서 확인한 결과는 "연결 시험 대상"을 "확인한 곳"으로 옮기는 근거가 됩니다. 고맙습니다.
+        **토큰, 캘린더 주소(.ics), 학번·이름이 보이는 화면은 절대 넣지 마세요.** 공개 이슈는 누구나 봅니다.
+  - type: input
+    id: school
+    attributes:
+      label: 학교
+      placeholder: ○○대학교
+    validations:
+      required: true
+  - type: input
+    id: lms
+    attributes:
+      label: LMS 종류와 주소(도메인만)
+      placeholder: Canvas, lms.example.ac.kr
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: openstem-mcp 버전
+      placeholder: 0.3.2
+  - type: dropdown
+    id: auth
+    attributes:
+      label: 연결 방법
+      options:
+        - 액세스 토큰
+        - 캘린더 주소(마감만)
+        - 둘 다
+    validations:
+      required: true
+  - type: checkboxes
+    id: works
+    attributes:
+      label: 되는 action
+      options:
+        - label: courses
+        - label: deadlines
+        - label: announcements
+        - label: files
+        - label: download
+        - label: sync
+  - type: textarea
+    id: blocked
+    attributes:
+      label: 안 되는 action과 이유
+      description: 에러 글(토큰을 지운 것), 학교가 토큰 발급을 막았는지, 토큰 만료 기간이 있는지 등
+  - type: checkboxes
+    id: secrets
+    attributes:
+      label: 확인
+      options:
+        - label: 토큰·캘린더 주소·개인 정보를 넣지 않았습니다.
+          required: true
