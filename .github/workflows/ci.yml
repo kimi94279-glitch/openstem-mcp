@@ -48,16 +48,29 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           enable-cache: true
+      # restore와 save를 나눈다: 시험이 실패해도 준비가 끝난 TeX 캐시는 저장해 다음 실행이 다시 받지 않게 한다.
       - name: Restore TeX cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        id: tex-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: ${{ matrix.tex-cache }}
-          key: tex-${{ runner.os }}-${{ hashFiles('src/openstem/render/tectonic_setup.py', 'src/openstem/render/latex.py', 'src/openstem/tools/tikz.py', 'src/openstem/tools/export.py') }}
+          key: tex-${{ runner.os }}-py${{ matrix.python }}-${{ hashFiles('src/openstem/render/tectonic_setup.py', 'src/openstem/render/latex.py', 'src/openstem/tools/tikz.py', 'src/openstem/tools/export.py', 'templates/**') }}
           restore-keys: |
+            tex-${{ runner.os }}-py${{ matrix.python }}-
             tex-${{ runner.os }}-
       - name: Install (uv.lock as is)
         run: uv sync --locked --all-extras
       - name: Prepare tectonic and TeX bundle
+        id: warmup
         run: uv run --locked --all-extras openstem-mcp --warmup
+      - name: Diagnose TeX failure
+        if: failure() && steps.warmup.outcome == 'failure'
+        run: uv run --locked --all-extras python .github/scripts/tex_diagnose.py
+      - name: Save TeX cache
+        if: steps.warmup.outcome == 'success' && steps.tex-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: ${{ matrix.tex-cache }}
+          key: ${{ steps.tex-cache.outputs.cache-primary-key }}
       - name: Test
         run: uv run --locked --all-extras pytest -ra
