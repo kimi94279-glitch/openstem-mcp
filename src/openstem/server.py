@@ -267,7 +267,7 @@ def read_document(
     annotations=ToolAnnotations(read_only_hint=True, destructive_hint=False, open_world_hint=True),
 )
 def lms(
-    action: Literal["courses", "deadlines", "announcements", "files", "download", "schools"],
+    action: Literal["courses", "deadlines", "announcements", "files", "download", "sync", "schools"],
     course: Annotated[str, Field(description="Course id or part of its name; schools: school name to look up")] = "",
     item: Annotated[str, Field(description="download: file id from action=files")] = "",
     days: Annotated[int, Field(description="deadlines/announcements: window in days (1-120)")] = 14,

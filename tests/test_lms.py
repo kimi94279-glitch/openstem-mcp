@@ -355,6 +355,64 @@ def test_moodle_files_and_download(moodle, storage, tmp_path):
     assert not storage.requests
 
 
+# ── sync: 과목 자료 한 번에 받기 ──
+
+
+def test_canvas_sync_new_then_up_to_date_then_updated(canvas, tmp_path):
+    first = ok("sync", course="101")
+    folder = materials(tmp_path) / "LMS" / "일반물리학 1"
+    got = {d["path"]: d["status"] for d in first["downloaded"]}
+    assert got["LMS/일반물리학 1/lecture1.pdf"] == "new"
+    assert "LMS/일반물리학 1/과제 안내.hwp" in got and "LMS/일반물리학 1/_CON.pdf" in got
+    assert first["skipped"]["not_readable"] == ["slides.zip"] and first["skipped"]["too_large"] == ["huge.pdf"]
+    assert "remaining" not in first and "read_document" in first["next"]
+    assert (folder / ".openstem-sync.json").is_file() and not list(folder.glob("*.part"))
+
+    second = ok("sync", course="101")
+    assert second["downloaded"] == [] and second["up_to_date"] == len(first["downloaded"])
+    assert "Nothing new" in second["note"]
+
+    canvas.contents[9001] = b"%PDF-1.4 lecture one, revised"
+    canvas.modified[9001] = canvas.file_time + timedelta(hours=1)
+    third = ok("sync", course="101")
+    assert third["downloaded"] == [{"path": "LMS/일반물리학 1/lecture1.pdf", "status": "updated"}]
+    assert (folder / "lecture1.pdf").read_bytes() == b"%PDF-1.4 lecture one, revised"
+    assert not (folder / "lecture1 (2).pdf").exists()  # 바뀐 파일은 덮어쓴다
+
+
+def test_sync_stops_at_the_limit_and_continues(canvas, monkeypatch):
+    monkeypatch.setattr(lms_tool, "SYNC_MAX_FILES", 2)
+    first = ok("sync", course="101")
+    assert len(first["downloaded"]) == 2 and first["remaining"] > 0
+    assert 'action="sync", course="101"' in first["next"]
+    second = ok("sync", course="101")
+    assert {d["path"] for d in first["downloaded"]}.isdisjoint(d["path"] for d in second["downloaded"])
+    assert second["up_to_date"] == 2
+
+
+def test_sync_reuses_a_file_from_download_and_ignores_tampered_state(canvas, tmp_path):
+    ok("download", course="101", item="9001")
+    folder = materials(tmp_path) / "LMS" / "일반물리학 1"
+    (folder / ".openstem-sync.json").write_text(
+        json.dumps({"version": 1, "files": {"9002": {"name": "../../outside.hwp", "updated": "x", "size": 1}}}),
+        encoding="utf-8")
+    data = ok("sync", course="101")
+    paths = {d["path"] for d in data["downloaded"]}
+    assert "LMS/일반물리학 1/lecture1.pdf" not in paths and data["up_to_date"] >= 1  # 같은 내용은 다시 쓰지 않는다
+    assert "LMS/일반물리학 1/과제 안내.hwp" in paths
+    assert not (materials(tmp_path).parent / "outside.hwp").exists()
+    assert not list(folder.glob("lecture1 (*"))
+
+
+def test_moodle_sync(moodle, storage, tmp_path):
+    data = ok("sync", course="11")
+    assert {d["path"] for d in data["downloaded"]} == {"LMS/공업수학 1/lecture1.pdf", "LMS/공업수학 1/data.csv"}
+    assert data["skipped"]["not_readable"] == ["tool.exe"]
+    assert data["failed"][0]["name"] == "outside.pdf" and "another site" in data["failed"][0]["error"]
+    assert not storage.requests
+    assert ok("sync", course="11")["downloaded"] == []
+
+
 def test_moodle_explicit_type(moodle, monkeypatch):
     monkeypatch.setenv("OPENSTEM_LMS_TYPE", "moodle")
     ok("courses")

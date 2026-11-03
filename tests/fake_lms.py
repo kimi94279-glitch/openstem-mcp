@@ -197,6 +197,8 @@ class FakeCanvas(FakeServer):
         self.planner = True
         self.slow = False  # True면 /api/v1/users/self를 조금씩 흘려 보낸다
         self.next_link: str | None = None  # 과목 목록 2쪽 주소를 바꿀 때(다른 origin 시험)
+        self.file_time = datetime.now(timezone.utc).replace(microsecond=0)  # 파일 수정 시각의 기준(서버마다 고정)
+        self.modified: dict[int, datetime] = {}  # 파일을 "고친" 시각(sync 시험)
         self.courses = [
             {"id": 101, "name": "일반물리학 1", "course_code": "PHY101", "term": {"name": "2026-2"}},
             {"id": 102, "name": "일반화학 및 실험", "course_code": "CHE101"},
@@ -219,7 +221,7 @@ class FakeCanvas(FakeServer):
         return {
             "id": fid, "display_name": name, "filename": name.replace(" ", "+"),
             "size": size if size is not None else len(self.contents.get(fid, b"x" * 10)),
-            "updated_at": _iso(datetime.now(timezone.utc) - timedelta(hours=fid % 50)),
+            "updated_at": _iso(self.modified.get(fid) or self.file_time - timedelta(hours=fid % 50)),
             "folder_id": folder, "url": url, "locked_for_user": False,
         }
 
