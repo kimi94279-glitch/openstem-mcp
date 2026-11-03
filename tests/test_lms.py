@@ -1110,8 +1110,21 @@ def test_disk_error_while_saving_is_a_short_error(canvas, tmp_path, monkeypatch)
 
     monkeypatch.setattr(common, "NAME_LIMIT", 10_000)
     monkeypatch.setattr(common, "NAME_BYTES", 10_000)
-    canvas.extra_files = [(9060, "가" * 150 + ".pdf")]  # 450바이트: Linux·Windows 모두 너무 긴 이름
+    canvas.extra_files = [(9060, "가" * 150 + ".pdf")]
     canvas.contents[9060] = b"%PDF long"
+    # 이름 길이 상한은 파일 시스템마다 다르다(Linux는 255바이트, NTFS·APFS는 UTF-16 255자라 이 이름도 받는다).
+    # 디스크 에러 처리만 보려고, 이 이름을 만들 때 운영체제가 "이름이 너무 김"을 돌려준다고 꾸민다.
+    import errno
+    import os
+
+    real_open = os.open
+
+    def too_long(path, *args, **kwargs):
+        if "가" * 100 in str(path):
+            raise OSError(errno.ENAMETOOLONG, "File name too long", str(path))
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr(os, "open", too_long)
     data = fail("download", course="101", item="9060")
     assert "Could not save" in data["errors"][0] and "too long" in data["hint"]
     folder = materials(tmp_path) / "LMS" / "일반물리학 1"
@@ -1142,9 +1155,11 @@ def test_broken_urls_and_far_dates_do_not_crash(canvas):
 
 
 def test_deeply_nested_json_is_not_a_crash(moodle):
+    # Python 3.13 이하는 깊은 JSON에서 RecursionError가 나고, 3.14는 그대로 읽는다. 어느 쪽이든 짧은 결과여야 한다.
     moodle.deep_json = True
-    data = fail("courses")
-    assert data["errors"]
+    result = run("courses")
+    if not result.ok:
+        assert result.data["errors"] and all(len(e) < 300 for e in result.data["errors"])
 
 
 def test_past_events_and_notes_are_past_not_overdue(canvas):

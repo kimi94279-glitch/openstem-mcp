@@ -398,14 +398,19 @@ def _place(tmp: Path, folder: Path, name: str, size: int, sha256: str, start: in
 def _course_folder(picked: dict[str, Any]) -> tuple[Path, Path]:
     """(자료 폴더, 자료 폴더/LMS/<과목>). 과목 폴더가 자료 폴더 밖이면 거절한다."""
     root = documents.input_dir().resolve()
-    folder = (root / LMS_FOLDER / safe_name(picked["name"], fallback=f"course-{picked['id']}", basename=False)).resolve()
-    if root not in folder.parents:
+    target = root / LMS_FOLDER / safe_name(picked["name"], fallback=f"course-{picked['id']}", basename=False)
+    # 만들기 전에 글자로 한 번, 만든 뒤 실제 경로로 한 번 확인한다. 없는 폴더를 resolve()하면 Windows에서는
+    # 다른 스레드가 같은 폴더를 만드는 도중에 경로 표기가 달라질 수 있어서(동시 sync), 실제 경로 확인은 만든 뒤에 한다.
+    if root not in Path(os.path.normpath(target)).parents:
         raise LmsError("Refused: the course folder would be outside the materials folder.")
     try:
-        folder.mkdir(parents=True, exist_ok=True)
+        target.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise LmsError(f"Could not create the course folder in the materials folder ({type(exc).__name__}).",
                        "The course name may be too long for this disk, or the folder is not writable.") from None
+    folder = target.resolve()
+    if root not in folder.parents:
+        raise LmsError("Refused: the course folder would be outside the materials folder.")
     return root, folder
 
 
