@@ -1,7 +1,7 @@
 {
   "name": "openstem",
   "displayName": "OpenSTEM",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "description": "STEM study kit for students: draws circuits, diagrams, graphs and molecules; checks math and units with sympy; reads PDF and Korean HWP lecture files; makes cheat sheets, practice exams, flashcards, slides and lab reports; reads Korean university LMSs. Runs locally, no extra AI cost.",
   "author": {
     "name": "openstem-mcp contributors",

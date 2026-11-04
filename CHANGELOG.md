@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-11-04
+
+감사 후속 개선 릴리스다.
+
 ### 추가
 
 - 재현 기록: render_tikz·export_document·plot_data·plot_function·render_molecule이 결과물 옆에 `<stem>.json`(툴, openstem·의존성 버전, 만든 시각, 입력 전체, 같은 이름의 파일들, 맞춤 계수·표준오차·R²·분자식·분자량·특이점 경고·시험지 문제 같은 결과)을 남긴다. 원본도 함께 저장한다: TikZ 코드는 `<stem>.tex`(서버가 감싼 전체 문서는 `<stem>.full.tex`), 마크다운은 `<stem>.md`(그림 경로는 결과물 폴더 기준 상대 경로), 그래프에 쓰인 데이터는 `<stem>.csv`. 툴 결과에 `source_path`·`record_path`를 싣고, 기록에는 이 PC의 경로를 남기지 않는다. `OPENSTEM_RECORD=0`이면 끈다. 저장에 실패해도 툴은 성공하고 경고 한 줄만 더한다.
@@ -96,7 +100,8 @@
 - **M5(0.2.0)**: 대학 전공 계산(verify_math: 미분방정식·행렬·라플라스·급수·합·부등식·확률분포), `check_units`, `plot_data`, `read_document`(PDF·한글·워드·파워포인트), export_document pptx·시험지·플래시카드, `exam`·`slides`·`flashcards`·`lab_report` 프롬프트, 다이어그램 템플릿 10개.
 - **M6(0.3.0)**: 원클릭 설치(.mcpb + tectonic 자동 준비), HTTP 모드(ChatGPT 연결), `lms` 툴(Canvas·Moodle 읽기 전용). 완료 기준: .mcpb를 새 폴더에 풀어 manifest의 명령 그대로 띄우면 모든 툴이 되고, HTTP 모드에 MCP 클라이언트로 붙어 툴을 부르고, 가짜 Canvas·Moodle 서버로 lms의 모든 action이 통과.
 
-[Unreleased]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.0...v0.3.1
