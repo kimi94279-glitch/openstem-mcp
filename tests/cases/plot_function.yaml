@@ -199,3 +199,30 @@
 - id: cube-root-power-gap-hints-cbrt
   input: {series: [{expr: "x**(1/3)"}], x_range: [-2, 2]}
   expect: {ok: true, warnings_contain: ["no real values", "cbrt"]}
+
+# ── 벤치마크(2026-11-04)에서 찾은 것 ─────────────────────
+# 부동소수로는 값이 나오지만(sin(pi) ≈ 1.2e-16) 정확히는 0/0인 점도 구멍이다
+- id: removable-holes-at-every-zero-of-denominator
+  input:
+    series: [{expr: "sin(3*x)/sin(x)"}]
+    x_range: [-4, 4]
+  expect: {ok: true, warnings_contain: ["single points x = 0, ±π(≈3.142)"], warnings_exclude: ["diverges"]}
+
+- id: removable-holes-tan-quotient
+  input:
+    series: [{expr: "tan(x)/x"}]
+    x_range: [-1, 1]
+  expect: {ok: true, warnings_contain: ["single point x = 0"]}
+
+# 표본이 모자라 곡선 대신 겉보기 무늬(aliasing)가 그려질 때
+- id: undersampled-fast-oscillation-warns
+  input:
+    series: [{expr: "cos(800*x)"}]
+    x_range: [0, 20]
+  expect: {ok: true, warnings_contain: ["aliasing", "Narrow x_range"]}
+
+- id: ordinary-oscillation-no-aliasing-warning
+  input:
+    series: [{expr: "sin(20*x)"}, {expr: "tan(x)"}, {expr: "floor(x)"}]
+    x_range: [-5, 5]
+  expect: {ok: true, warnings_exclude: ["aliasing"]}

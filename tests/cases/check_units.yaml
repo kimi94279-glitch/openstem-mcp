@@ -175,3 +175,44 @@
 - id: delta-celsius-in-formula
   input: {expr: "m*c*dT", units: {m: "1 kg", c: "4186 J/(kg*K)", dT: "10 delta_degC"}, expect: J}
   expect: {ok: true, matches: true, approx: 41860.0, excludes: ["temperature reading"]}
+
+# ── 벤치마크(2026-11-04)에서 찾은 것 ─────────────────────
+# sympy가 읽으면서 지우는 항도 차원 검사를 거친다(x + y - y → x지만 m + s는 정의되지 않는다)
+- id: cancelling-terms-still-checked
+  input: {expr: "a + b - b", units: {a: kg, b: m}, expect: kg}
+  expect: {ok: true, consistent: false, matches: false, contains: ["Dimensions differ", "cancel"]}
+
+- id: cancelling-terms-same-dimension-fine
+  input: {expr: "v + u - u", units: {v: "m/s", u: "km/h"}, expect: "m/s"}
+  expect: {ok: true, consistent: true, matches: true}
+
+# 온도 눈금 안내(ΔT)는 온도에만 붙는다. dB·Np도 pint에서 곱셈이 안 되는 단위지만 온도가 아니다.
+- id: decibel-has-no-temperature-note
+  input: {value: "30 dB", to: "1"}
+  expect: {ok: true, approx: 1000, excludes: ["temperature", "delta_degC"]}
+
+- id: degc-conversion-keeps-temperature-note
+  input: {value: "25 degC", to: "K"}
+  expect: {ok: true, approx: 298.15, contains: ["delta_degC"]}
+
+# 식품 칼로리 Cal = kcal
+- id: food-calorie
+  input: {value: "250 Cal", to: kJ}
+  expect: {ok: true, approx: 1046, contains: ["food calorie"]}
+
+- id: small-calorie-unchanged
+  input: {value: "1 cal", to: J}
+  expect: {ok: true, approx: 4.184, excludes: ["food calorie"]}
+
+# 가우스 CGS 전자기 단위 ↔ SI(차원이 달라 그냥은 바뀌지 않는다)
+- id: gauss-to-tesla
+  input: {value: "500 G", to: mT}
+  expect: {ok: true, approx: 50, contains: ["Gaussian-CGS"]}
+
+- id: tesla-to-gauss
+  input: {value: "2 T", to: gauss}
+  expect: {ok: true, approx: 20000}
+
+- id: gaussian-unit-to-unrelated-still-fails
+  input: {value: "1 G", to: m}
+  expect: {ok: false, errors_contain: ["Cannot convert"]}

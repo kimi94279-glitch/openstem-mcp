@@ -13,7 +13,7 @@ import random
 import re
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any
 
@@ -33,6 +33,9 @@ SYMBOLIC_BUDGET = 12.0  # 기호 계산 전체에 쓰는 시간(초). 작업자 
 EXTRA_CAP = 2.0  # 판정이 끝난 뒤 덧붙이는 확인(상수 차이 등) 한 번에 쓰는 시간
 POSITIVE_CAP = 3.0  # 양수 가정으로 다시 확인할 때 기호 계산 한 번에 쓰는 시간
 NUMERIC_POINTS = 8
+FINE_POINTS = 4  # 소수 둘째 자리 점 뒤에 더 보는 점(분모가 큰 소수 100003이라 sin(100*pi*x)·floor(100*x)의 영점·계단을 피한다)
+FINE_DENOMINATOR = 100003
+FINE_SEED = 20261104
 # 수치 비교 점의 크기(1/100 단위). 작은 값만 보면 Min(x, 3)과 x, acos(cos(x))와 abs(x)를 가르지 못한다.
 SAMPLE_BANDS = ((10, 300), (300, 1000), (10, 300), (300, 1000), (1000, 5000), (10, 300), (300, 1000), (1000, 5000))
 SAMPLE_LIMIT = SAMPLE_BANDS[4][1] // 100
@@ -327,8 +330,21 @@ def pick_var(exprs: list[sp.Basic], var: str | None, action: str, default: str =
 
 
 def exact(expr: sp.Basic) -> sp.Basic:
-    """소수를 분수로(9.8 → 49/5). 1.2*x + 0.6*x와 1.8*x가 소수 오차로 달라지지 않게 한다."""
-    return sp.nsimplify(expr, rational=True) if expr.has(sp.Float) else expr
+    """소수를 적힌 십진수 그대로 분수로(9.8 → 49/5). 1.2*x + 0.6*x와 1.8*x가 소수 오차로 달라지지 않게 한다.
+
+    nsimplify(rational=True)는 '가까운 간단한 수'를 찾아 1.000000001을 1로, 0.49999999를 1/2로 바꿔 버려서 쓰지 않는다.
+    Float을 15자리 십진수로 적은 글에서 분수를 만들므로 0.1 + 0.2(이진수 0.30000000000000004)는 3/10이 된다.
+    """
+    if not expr.has(sp.Float):
+        return expr
+    return expr.xreplace({f: _decimal(f) for f in expr.atoms(sp.Float)})
+
+
+def _decimal(f: sp.Float) -> sp.Basic:
+    try:
+        return sp.Rational(str(f))
+    except (TypeError, ValueError):  # inf·nan 같은 값은 그대로 둔다
+        return f
 
 
 def as_positive(expr: sp.Basic) -> sp.Basic:
@@ -436,9 +452,16 @@ def close(a: float, b: float) -> bool:
     return abs(a - b) <= max(REL_TOL * max(abs(a), abs(b)), ABS_TOL)
 
 
-def sample_point(rng: random.Random, symbols: list[sp.Symbol], k: int) -> dict[sp.Symbol, sp.Basic]:
-    """k번째 비교 점. 크기는 SAMPLE_BANDS를 돌아가며(0.1~3, 3~10, 10~50), 부호는 무작위(양수 변수는 양수)."""
+def sample_point(rng: random.Random, symbols: list[sp.Symbol], k: int, fine: bool = False) -> dict[sp.Symbol, sp.Basic]:
+    """k번째 비교 점. 크기는 SAMPLE_BANDS를 돌아가며(0.1~3, 3~10, 10~50), 부호는 무작위(양수 변수는 양수).
+
+    fine이면 분모가 FINE_DENOMINATOR(소수)인 점이다. 소수 둘째 자리 점은 floor(100*x)/100 = x, sin(100*pi*x) = 0,
+    cos(200*pi*x) = 1이 모두 성립하는 곳이라, 주기·계단 함수를 '같다'로 놓치지 않게 섞는다.
+    """
     lo, hi = SAMPLE_BANDS[k % len(SAMPLE_BANDS)]
+    if fine:
+        scale = FINE_DENOMINATOR // 100
+        return {s: sp.Rational((1 if s.is_positive else rng.choice([-1, 1])) * rng.randint(lo * scale, hi * scale), FINE_DENOMINATOR) for s in symbols}
     return {s: sp.Rational((1 if s.is_positive else rng.choice([-1, 1])) * rng.randint(lo, hi), 100) for s in symbols}
 
 
@@ -447,29 +470,106 @@ def sampled_range(points: list[dict[str, float]]) -> str:
     return f"[{min(values):g}, {max(values):g}]"
 
 
+def sample_points(symbols: list[sp.Symbol]) -> Iterator[dict[sp.Symbol, sp.Basic]]:
+    """비교 후보 점을 차례로 낸다. 소수 둘째 자리 점(시드 고정)을 먼저, 다음에 분모가 큰 점(다른 시드)을 낸다.
+
+    호출하는 쪽이 send(True)로 '이 점은 썼다'를 알려 준다. 앞쪽은 NUMERIC_POINTS개, 뒤쪽은 FINE_POINTS개를 쓸 때까지,
+    각각 NUMERIC_ATTEMPTS번까지 시도한다.
+    """
+    if not symbols:
+        yield {}
+        return
+    for rng, fine, wanted in ((random.Random(20261102), False, NUMERIC_POINTS), (random.Random(FINE_SEED), True, FINE_POINTS)):
+        used = 0
+        for _ in range(NUMERIC_ATTEMPTS):
+            if used >= wanted:
+                break
+            if (yield sample_point(rng, symbols, used, fine)):
+                used += 1
+
+
 def numeric_compare(a: sp.Basic, b: sp.Basic, symbols: list[sp.Symbol]) -> dict[str, Any]:
     """무작위 점(변수마다 -50~50, 0 근처 제외. 양수 변수는 양수)에서 두 식의 실수 값을 비교한다. 시드는 고정(재현성)."""
-    rng = random.Random(20261102)
     checked: list[dict[str, float]] = []
+    exact_points: list[dict[sp.Symbol, sp.Basic]] = []
     one_sided = 0
-    for _ in range(NUMERIC_ATTEMPTS if symbols else 1):
-        if len(checked) >= NUMERIC_POINTS:
-            break
-        point = sample_point(rng, symbols, len(checked))
+    points = sample_points(symbols)
+    point = next(points, None)
+    while point is not None:
         va, vb = real_value(a, point), real_value(b, point)
-        if va is None or vb is None:
+        used = va is not None and vb is not None
+        if not used:
             one_sided += (va is None) != (vb is None)
-            continue
-        at = {s.name: float(v) for s, v in point.items()}
-        if not close(va, vb):
-            return {"checked": len(checked) + 1, "agree": False, "counterexample": {"at": at, "expr": va, "against": vb}}
-        checked.append(at)
-    result: dict[str, Any] = {"checked": len(checked), "agree": True}
+        else:
+            at = {s.name: float(f"{float(v):.10g}") for s, v in point.items()}
+            if not close(va, vb):
+                return {"checked": len(checked) + 1, "agree": False, "counterexample": {"at": at, "expr": va, "against": vb}}
+            checked.append(at)
+            exact_points.append(point)
+        try:
+            point = points.send(used)
+        except StopIteration:
+            point = None
+    result: dict[str, Any] = {"checked": len(checked), "agree": True, "_exact_points": exact_points}
     if checked and symbols:
         result["points"] = checked
     if one_sided:
         result["domain_note"] = f"At {one_sided} point(s) only one expression had a real value (the expressions have different domains)."
     return result
+
+
+def principal_counterexample(a: sp.Basic, b: sp.Basic, symbols: list[sp.Symbol]) -> tuple[dict[str, float], str, str] | None:
+    """한쪽은 실수, 다른 쪽은 음수 밑의 홀수 분수 거듭제곱(주값) 때문에 실수가 아닌 점. (점, 그쪽 이름, 값 글)."""
+    sides = [(name, e) for name, e in (("expr", a), ("against", b)) if odd_root_note(e)]
+    if not sides:
+        return None
+    points = sample_points(symbols)
+    point = next(points, None)
+    while point is not None:
+        values = {"expr": real_value(a, point), "against": real_value(b, point)}
+        for name, e in sides:
+            other = "against" if name == "expr" else "expr"
+            if values[name] is None and values[other] is not None:
+                try:
+                    z = complex(sp.N(e.subs(point), 15))
+                except (TypeError, ValueError, ZeroDivisionError):
+                    continue
+                if np.isfinite(z.real) and np.isfinite(z.imag) and abs(z.imag) > 1e-9 * max(1.0, abs(z.real)):
+                    sign = "+" if z.imag >= 0 else "-"
+                    return {s.name: float(f"{float(v):.10g}") for s, v in point.items()}, name, f"{z.real:.6g} {sign} {abs(z.imag):.6g}i"
+        try:
+            point = points.send(True)
+        except StopIteration:
+            point = None
+    return None
+
+
+TINY_PRECISION = (40, 80)  # 작은 차이를 확인할 때 쓰는 두 정밀도(자리). 두 값이 맞아야 '0이 아니다'로 본다
+TINY_REL = 1e-35  # 이보다 작은 상대 차이는 계산 잡음으로 본다(40자리 계산이라 여유를 둔다)
+
+
+def tiny_difference(a: sp.Basic, b: sp.Basic, points: list[dict[sp.Symbol, sp.Basic]]) -> tuple[dict[str, float], float, float] | None:
+    """수치 비교가 '같다'고 본 점에서 a - b를 높은 정밀도로 두 번 계산해, 0이 아닌 차이가 확인되는 첫 점을 돌려준다.
+
+    (점, 차이, 상대 차이) 또는 None. 기호로 같다고 증명하지 못한 경우에만 부른다. 참인 항등식은 차이가 0이거나
+    정밀도에 따라 달라지는 잡음(0.e-172 같은 유효숫자 없는 값)이 나오므로 '다르다'가 되지 않는다.
+    """
+    diff = a - b
+    for point in points:
+        try:
+            values = [sp.N(diff.subs(point), digits) for digits in TINY_PRECISION]
+            scale = max(abs(float(sp.N(a.subs(point), 20))), abs(float(sp.N(b.subs(point), 20))))
+        except (ZeroDivisionError, ValueError, TypeError):
+            continue
+        if not all(v.is_number and v.is_Float and v._prec > 30 for v in values):
+            continue  # 정확히 0(Integer), 복소수, 유효숫자 없는 값
+        lo, hi = (float(v) for v in values)
+        if hi == 0 or abs(lo - hi) > 1e-6 * abs(hi):
+            continue
+        rel = abs(hi) / scale if scale else float("inf")
+        if rel > TINY_REL:
+            return {s.name: float(v) for s, v in point.items()}, hi, rel
+    return None
 
 
 def positive_equal(a: sp.Basic, b: sp.Basic, budget: Budget) -> bool:
@@ -553,6 +653,27 @@ def numeric_roots(expr: sp.Expr, v: sp.Symbol, budget: Budget | None = None) -> 
 
 
 def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
+    out = _op_equal(p, budget)
+    if out.get("matches") is not True:
+        _add_root_hint(out, [p["expr"], p["against"]], p["latex"])
+    return out
+
+
+def _add_root_hint(out: dict[str, Any], texts: list[str], latex: bool) -> None:
+    """주값 규약((-8)**(1/3)은 복소수) 때문에 같지 않다·해가 없다가 됐을 수 있으면 실수 세제곱근 cbrt()를 안내한다."""
+    if "cbrt(" in out.get("note", ""):
+        return
+    exprs = []
+    for text in texts:
+        try:
+            exprs.append(parse(text, latex, "expr"))
+        except WorkerError:
+            continue
+    if root := odd_root_note(*exprs):
+        out["note"] = f"{out['note']} {root}" if out.get("note") else root
+
+
+def _op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     a = parse(p["expr"], p["latex"], "expr")
     b = parse(p["against"], p["latex"], "against")
     symbols = sorted(a.free_symbols | b.free_symbols, key=lambda s: s.name)
@@ -562,9 +683,18 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     }
     ea, eb = exact(a), exact(b)
     numeric = numeric_compare(ea, eb, symbols)
+    exact_points = numeric.pop("_exact_points", [])
     out["numeric"] = numeric
     notes: list[str] = []
     recheck = bool(symbols) and not POSITIVE  # 실수로는 다를 때 양수 가정으로 다시 본다
+    if numeric["agree"] and numeric.get("domain_note") and (found := principal_counterexample(ea, eb, symbols)):
+        # (x**3)**(1/3)과 x: x < 0에서 왼쪽은 주값(복소수)이라 '정의역 차이'가 아니라 값이 다르다
+        at, side, value = found
+        where = ", ".join(f"{k} = {v:g}" for k, v in at.items())
+        other = "against" if side == "expr" else "expr"
+        out.update(matches=False, method="numeric")
+        out["note"] = f"Not equal with the principal root: at {where}, {side} = {value} (complex) while {other} is real."
+        return out
     if not numeric["agree"]:
         out.update(matches=False, method="numeric")
         ce = numeric["counterexample"]
@@ -604,6 +734,22 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         if note := domain_note(p, symbols, budget):
             out["note"] = note
         return out
+    if (tiny := tiny_difference(ea, eb, exact_points)) is not None:
+        # 허용 오차(REL_TOL)보다 작지만 높은 정밀도로 다시 계산해도 0이 아닌 차이: x + exp(-50)과 x, x + 1e-9*x와 x.
+        out.update(matches=False, method="symbolic")
+        at, value, rel = tiny
+        where = f" at {', '.join(f'{k} = {v:g}' for k, v in at.items())}" if at else ""
+        notes.append(
+            f"Not equal: expr - against = {value:.3e}{where} (relative {rel:.1e}), confirmed at higher precision. "
+            f"The difference is below the {REL_TOL:g} relative tolerance of the numeric check, so they look equal numerically."
+        )
+        if a.has(sp.Float) or b.has(sp.Float):
+            digits = max(0, int(-mpmath.log10(rel)))
+            notes.append(
+                f"Decimals are read as the exact values written. If a decimal is a rounded value, the two agree to about {digits} significant digits."
+            )
+        out["note"] = " ".join(notes)
+        return out
     if verdict is False and symbols and (not numeric["checked"] or not numeric.get("domain_note")):
         # sympy의 equals()는 복소수 점에서도 비교한다. 실수 점에서 반례가 없으면 '다르다'고 단정하지 않는다
         # (abs(x - 1) + abs(x + 1)과 2*Max(1, abs(x)), atan(x) + atan(1/x)과 pi/2*sign(x) 등).
@@ -632,7 +778,8 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         notes.append(POSITIVE_NOTE)
     if note := domain_note(p, symbols, budget):
         notes.append(note)
-    out["note"] = " ".join(notes)
+    if notes:
+        out["note"] = " ".join(notes)
     return out
 
 
@@ -870,7 +1017,18 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget, conditions: list[Co
 def op_solve(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     texts = [t for t in p["expr"].split(";") if t.strip()]
     if any(INEQUALITY_SIGN.search(t) for t in texts):
-        return solve_inequalities(texts, p, budget)
+        out = solve_inequalities(texts, p, budget)
+        sides = [side for t in texts for side in mathexpr.split_relation(t)[0]]
+    else:
+        out = _solve_equations(texts, p, budget)
+        sides = [side for t in texts for side in equation_sides(t)]
+    # 해가 없거나 버린 해가 있을 때만: x**(1/3) = -2는 주값으로 해가 없지만 cbrt(x) = -2는 x = -8
+    if out.get("solutions") == [] or out.get("result") == "∅" or "dropped" in out.get("note", ""):
+        _add_root_hint(out, sides, p["latex"])
+    return out
+
+
+def _solve_equations(texts: list[str], p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     eqs = [parse_equation(t, p["latex"], f"equation {i + 1}") for i, t in enumerate(texts)]
     conditions = domain_conditions([side for t in texts for side in equation_sides(t)], p["latex"])
     names = [n.strip() for n in (p.get("var") or "").split(",") if n.strip()]
@@ -916,11 +1074,26 @@ def op_diff(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     v = pick_var([expr], p.get("var"), "differentiate by")
     order = int(p.get("order") or 1)
     derivative = sp.diff(expr, v, order)
+    notes: list[str] = []
+    steps = {d for d in derivative.atoms(sp.Derivative) if isinstance(d.expr, STEP_FUNCS)}
+    if steps:
+        # sympy는 floor(x)의 도함수를 계산하지 않고 Derivative(floor(x), x)로 남긴다. 계단 사이에서는 0이다.
+        derivative = derivative.xreplace({d: sp.S.Zero for d in steps})
+        jumps = ", ".join(sorted(f"{sstr(d.expr.args[0])}" for d in steps))
+        notes.append(
+            f"floor/ceiling are constant between jumps, so their derivative is 0 except where the argument ({jumps}) is an integer; "
+            "there the function jumps and the derivative is undefined."
+        )
     try:
         derivative = budget.run(sp.simplify, derivative)
     except TimeoutError:
         pass
-    return {"parsed": clip(sstr(expr)), "variable": v.name, "order": order, **show(derivative)}
+    out = {"parsed": clip(sstr(expr)), "variable": v.name, "order": order, **show(derivative)}
+    if derivative.has(sp.Derivative):
+        notes.append("Part of the derivative could not be computed and is left unevaluated (Derivative(…)).")
+    if notes:
+        out["note"] = " ".join(notes)
+    return out
 
 
 def op_integrate(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
@@ -965,16 +1138,25 @@ def op_integrate(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     if result.has(sp.nan, sp.zoo):
         out.update(result="diverges", note="The definite integral diverges and has no value (the function goes to infinity inside the interval).")
         return out
+    if result.has(sp.Integral) and (stepped := integrate_steps(expr, v, lo, hi, budget)) is not None:
+        value, cuts = stepped
+        out.update(show(value))
+        shown = ", ".join(f"{v.name} = {sstr(c)}" for c in cuts[:6]) + (" …" if len(cuts) > 6 else "")
+        out["note"] = f"Integrated piece by piece between the jumps of the step function ({shown})."
+        return out
     if result.has(sp.Integral):
         try:
             value = budget.run(lambda: sp.N(sp.Integral(expr, (v, lo, hi)), 15))
         except TimeoutError:
             raise
-        except Exception:  # 구간 안의 발산점에서 수치 적분이 깨진다
+        except Exception:  # 구간 안의 발산점·계단에서 수치 적분이 깨진다
             value = sp.nan
         out["result"] = "not computed symbolically"
         if (out_approx := approx(value)) is None:
-            out["note"] = "Could not compute numerically either (it diverges inside the interval, or other letters remain). Split the interval and check."
+            out["note"] = (
+                "Could not compute it numerically either (this alone does not mean it diverges). "
+                "If the integrand jumps or blows up inside the interval, split the interval at those points; give values for any other letters."
+            )
             return out
         out["approx"] = out_approx
         out["note"] = "approx is a numerical integral."
@@ -983,6 +1165,58 @@ def op_integrate(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     if (root := odd_root_note(expr)) and not (isinstance(lo, sp.Basic) and lo.is_nonnegative):
         out["note"] = root
     return out
+
+
+MAX_STEP_PIECES = 200
+STEP_FUNCS = (sp.floor, sp.ceiling)
+
+
+def integrate_steps(expr: sp.Expr, v: sp.Symbol, lo: sp.Basic, hi: sp.Basic, budget: Budget) -> tuple[sp.Basic, list[sp.Basic]] | None:
+    """floor·ceiling(a*x + b)가 든 정적분을 계단이 바뀌는 점에서 나눠, 조각마다 상수로 바꿔 기호로 적분한다.
+
+    sympy는 floor(x)를 적분하지 못하고, 수치 적분도 계단에서 깨진다. (값, 나눈 점) 또는 None(이 꼴이 아니거나 조각이 너무 많음).
+    """
+    steps = [f for f in expr.atoms(*STEP_FUNCS) if f.has(v)]
+    lo, hi = exact(lo), exact(hi)
+    if not steps or not (lo.is_real and hi.is_real and lo.is_finite and hi.is_finite):
+        return None
+    sign = 1
+    if lo > hi:
+        lo, hi, sign = hi, lo, -1
+    cuts: set[sp.Basic] = set()
+    for f in steps:
+        arg = exact(f.args[0])
+        if arg.has(*STEP_FUNCS) or not arg.is_polynomial(v):
+            return None
+        poly = sp.Poly(arg, v)
+        if poly.degree() != 1 or not all(c.is_number for c in poly.all_coeffs()):
+            return None
+        a, b = poly.all_coeffs()
+        ends = sorted([a * lo + b, a * hi + b])
+        first, last = int(sp.ceiling(ends[0])), int(sp.floor(ends[1]))
+        if last - first > MAX_STEP_PIECES:
+            return None
+        cuts |= {(n - b) / a for n in range(first, last + 1)}
+    inner = sorted(c for c in cuts if lo < c < hi)
+    if len(inner) >= MAX_STEP_PIECES:
+        return None
+    edges = [lo, *inner, hi]
+    total: sp.Basic = sp.S.Zero
+    for x0, x1 in zip(edges, edges[1:]):
+        mid = (x0 + x1) / 2
+        piece = expr.xreplace({f: f.func(exact(f.args[0]).subs(v, mid)) for f in steps})
+        try:
+            value = budget.run(sp.integrate, piece, (v, x0, x1), cap=PART_CAP)
+        except Exception:  # 시간 초과 등: 조각 하나라도 못 하면 이 방법은 쓰지 않는다
+            return None
+        if value.has(sp.Integral, sp.oo, -sp.oo, sp.zoo, sp.nan):
+            return None
+        total += value
+    try:
+        total = budget.run(sp.simplify, total, cap=EXTRA_CAP)
+    except Exception:
+        pass
+    return sign * total, inner
 
 
 def op_limit(p: dict[str, Any], budget: Budget) -> dict[str, Any]:

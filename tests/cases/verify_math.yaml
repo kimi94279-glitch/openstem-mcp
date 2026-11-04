@@ -620,7 +620,7 @@
 # equal: sympy equals()가 복소수 점으로 False를 내도 실수에서 반례가 없으면 unknown
 - id: equal-abs-sum-vs-max-unknown-not-false
   input: {op: equal, expr: "abs(x - 1) + abs(x + 1)", against: "2*Max(1, abs(x))"}
-  expect: {ok: true, matches: unknown, contains: ["numerically equal at all 8 points sampled in ["]}
+  expect: {ok: true, matches: unknown, contains: ["numerically equal at all 12 points sampled in ["]}
 
 - id: equal-floor-identity-not-false
   input: {op: equal, expr: "floor(x/2) + floor((x + 1)/2)", against: "floor(x)"}
@@ -749,3 +749,85 @@
 - id: inequality-numeric-interval-beyond-ten
   input: {op: solve, expr: "exp(x) > x**10"}
   expect: {ok: true, result: "(-0.9127653, 1.118326) ∪ (35.77152, 1000]", contains: ["still holds at x = 1000", "may continue beyond"]}
+
+# ── 벤치마크(2026-11-04)에서 찾은 것 ─────────────────────
+# 소수는 적힌 십진수 그대로 분수로 읽는다(nsimplify가 1.000000001을 1로 뭉개지 않게)
+- id: equal-tiny-decimal-coefficient-differs
+  input: {op: equal, expr: "t + 3e-10*t", against: "t"}
+  expect: {ok: true, matches: false, contains: ["Not equal", "Decimals are read as the exact values"]}
+
+- id: equal-near-half-coefficient-differs
+  input: {op: equal, expr: "0.2499999*y**3", against: "y**3/4"}
+  expect: {ok: true, matches: false}
+
+- id: equal-float-rounding-still-equal
+  input: {op: equal, expr: "0.7*x + 0.1*x", against: "0.8*x"}
+  expect: {ok: true, matches: true}
+
+- id: equal-decimal-constants-without-variables
+  input: {op: equal, expr: "0.1 + 0.2", against: "0.3"}
+  expect: {ok: true, matches: true}
+
+# 허용 오차보다 작은 차이도 높은 정밀도로 0이 아님이 확인되면 false
+- id: equal-tiny-exact-constant-differs
+  input: {op: equal, expr: "exp(-60) + sin(x)", against: "sin(x)"}
+  expect: {ok: true, matches: false, contains: ["confirmed at higher precision"], excludes: ["Decimals"]}
+
+- id: equal-tiny-relative-symbolic-differs
+  input: {op: equal, expr: "x*(1 + 1/10**12)", against: "x"}
+  expect: {ok: true, matches: false}
+
+# 소수 둘째 자리 표본점에만 맞는 주기·계단 함수
+- id: equal-periodic-zero-at-grid-points
+  input: {op: equal, expr: "sin(300*pi*x)", against: "0"}
+  expect: {ok: true, matches: false, contains: ["counterexample"]}
+
+- id: equal-step-function-at-grid-points
+  input: {op: equal, expr: "ceiling(100*x)/100", against: "x"}
+  expect: {ok: true, matches: false}
+
+# 주값 세제곱근: 같지 않다·해가 없다면 cbrt()를 안내한다
+- id: equal-principal-cube-root-hint
+  input: {op: equal, expr: "(-27)**(1/3)", against: "-3"}
+  expect: {ok: true, matches: false, contains: ["cbrt(-1)"]}
+
+- id: equal-principal-cube-root-of-cube
+  input: {op: equal, expr: "(t**3)**(1/3)", against: "t"}
+  expect: {ok: true, matches: false, contains: ["principal root", "cbrt(t**3)"]}
+
+- id: equal-true-identity-without-root-hint
+  input: {op: equal, expr: "x**(1/3)*x**(2/3)", against: "x"}
+  expect: {ok: true, excludes: ["cbrt"]}
+
+- id: solve-principal-cube-root-dropped-hint
+  input: {op: solve, expr: "x**(1/3) = -3"}
+  expect: {ok: true, solutions: [], contains: ["dropped x = -27", "cbrt(x)"]}
+
+- id: solve-principal-cube-root-inequality-hint
+  input: {op: solve, expr: "x**(1/3) < -2"}
+  expect: {ok: true, result: "∅", contains: ["cbrt(x)"]}
+
+- id: solve-cube-root-with-solution-no-hint
+  input: {op: solve, expr: "x**(1/3) = 2"}
+  expect: {ok: true, solutions: ["8"], excludes: ["cbrt"]}
+
+# floor·ceiling의 정적분은 계단마다 나눠 기호로, 도함수는 계단 사이 0
+- id: integrate-floor-piecewise
+  input: {op: integrate, expr: "floor(x)", bounds: ["0", "4"]}
+  expect: {ok: true, result: "6", contains: ["piece by piece"]}
+
+- id: integrate-ceiling-linear-argument
+  input: {op: integrate, expr: "x*ceiling(2*x)", bounds: ["0", "1"]}
+  expect: {ok: true, result: "7/8"}
+
+- id: integrate-floor-reversed-bounds
+  input: {op: integrate, expr: "floor(x)", bounds: ["2", "0"]}
+  expect: {ok: true, result: "-1"}
+
+- id: integrate-no-value-does-not-claim-divergence
+  input: {op: integrate, expr: "floor(x**2)*exp(x**3)", bounds: ["0", "2"]}
+  expect: {ok: true, excludes: ["it diverges inside"]}
+
+- id: diff-floor-zero-between-jumps
+  input: {op: diff, expr: "x**2 + ceiling(3*x)"}
+  expect: {ok: true, result: "2*x", contains: ["integer", "undefined"]}

@@ -223,6 +223,11 @@ def as_cycles(q: Any) -> Any:
     return root / UREG.Quantity(TWO_PI, "radian") ** k if k else root
 
 
+def _is_temperature_scale(q: Any) -> bool:
+    """degC·degF 같은 온도 눈금인가. dB·Np 같은 로그 단위도 곱셈이 안 되지만 온도가 아니다."""
+    return _is_offset(q) and dict(q.dimensionality) == {"[temperature]": 1}
+
+
 def _is_offset(q: Any) -> bool:
     """degC·degF처럼 눈금(0점이 다른) 단위인가. 이런 단위는 곱셈이 정의되지 않는다."""
     import pint
@@ -462,6 +467,24 @@ def _revolution_value(name: str, text: str, q: Any, has_value: bool, has_pi: boo
     return q
 
 
+SUM_PROBLEM = "Dimensions differ among the terms of a sum/difference"
+
+
+def unreduced_sum_problems(expr_text: str, env: dict[str, Node], found: list[str]) -> list[str]:
+    """sympy는 읽으면서 x + y - y를 x로 줄인다. 줄이기 전의 식에서 덧셈 항끼리 차원이 다른 곳을 찾는다(m + s)."""
+    try:
+        raw = mathexpr.parse(expr_text, None, evaluate=False)
+        checker = Checker(env)
+        checker.walk(raw)
+    except Exception:  # 줄이지 않은 꼴을 읽지 못하면 줄인 식의 검사만 쓴다
+        return []
+    return [
+        f"{p} (the terms cancel in the simplified expression, but a sum of different dimensions is not defined)"
+        for p in checker.problems
+        if p.startswith(SUM_PROBLEM) and p not in found
+    ]
+
+
 def check_expr(payload: dict[str, Any]) -> dict[str, Any]:
     import sympy
 
@@ -480,7 +503,7 @@ def check_expr(payload: dict[str, Any]) -> dict[str, Any]:
         except WorkerError as exc:
             errors += exc.errors
             continue
-        if _is_offset(q):
+        if _is_temperature_scale(q):
             # 눈금 온도(°C·°F)는 곱셈이 정의되지 않아 K으로 바꿔 계산한다. 온도 차이라면 값이 틀려진다.
             q = q.to("kelvin")
             if has_value:
@@ -499,6 +522,8 @@ def check_expr(payload: dict[str, Any]) -> dict[str, Any]:
 
     checker = Checker(env)
     root = checker.walk(expr)
+    if not checker.problems:  # 줄인 식에서 이미 문제가 보이면 같은 덧셈 문제를 겹쳐 싣지 않는다
+        checker.problems += unreduced_sum_problems(expr_text, env, checker.problems)
     result: dict[str, Any] = {"ok": True, "mode": "expr", "parsed": str(expr)}
     consistent = not checker.problems
     result["consistent"] = consistent
@@ -561,6 +586,23 @@ def _named_si(dims: dict[str, Fraction]) -> str | None:
 
 # ── 단위 변환 ───────────────────────────────────────────────────────
 
+GAUSSIAN_NOTE = (
+    "Converted between Gaussian-CGS and SI electromagnetic units (G = gauss: 1 G = 1e-4 T; 1 Oe = 1000/(4π) A/m). "
+    "The two systems have different dimensions, so this uses the standard Gaussian ↔ SI correspondence."
+)
+
+
+def _gaussian(q: Any, target: Any) -> Any:
+    """가우스 CGS 전자기 단위(pint의 G·gauss·Oe·statC는 차원이 SI와 다르다) ↔ SI. 대응이 없으면 None."""
+    import pint
+
+    try:
+        out = q.to(target, "Gaussian")
+    except (pint.PintError, KeyError, ValueError):
+        return None
+    # pint는 2019년 SI의 μ0(4π×1e-7에서 1e-10쯤 벗어남)를 써서 1 G가 9.9999999993e-05 T로 나온다. 관례 값으로 반올림한다.
+    return UREG.Quantity(float(f"{float(out.magnitude):.9g}"), out.units)
+
 
 def convert(payload: dict[str, Any]) -> dict[str, Any]:
     import pint
@@ -578,14 +620,18 @@ def convert(payload: dict[str, Any]) -> dict[str, Any]:
             raise WorkerError([f"to '{to_text}': give only a unit, no number. E.g. \"m/s\""])
         want = dims_of(target.units)
         if got != want:
-            raise WorkerError(
-                [f"Cannot convert: '{text}' is {dim_text(got)} but to '{to_text}' is {dim_text(want)}."],
-                "Set to a unit of the same dimension.",
-            )
-        try:
-            out = q.to(target.units)
-        except pint.PintError as exc:
-            raise WorkerError([f"Cannot convert: {str(exc)[:120]}"]) from None
+            out = _gaussian(q, target.units)
+            if out is None:
+                hint = "Set to a unit of the same dimension."
+                if any(n == "newtonian_constant_of_gravitation" for n, _ in q.unit_items()):
+                    hint = "G here is the gravitational constant. For the magnetic unit gauss write 'gauss' (1 gauss = 1e-4 T)."
+                raise WorkerError([f"Cannot convert: '{text}' is {dim_text(got)} but to '{to_text}' is {dim_text(want)}."], hint)
+            notes.append(GAUSSIAN_NOTE)
+        else:
+            try:
+                out = q.to(target.units)
+            except pint.PintError as exc:
+                raise WorkerError([f"Cannot convert: {str(exc)[:120]}"]) from None
         a, b = _radian_power(q), _radian_power(target)
         if a != b and _key(got) == (0, 0, -1, 0, 0, 0, 0):
             # rpm·rad/s ↔ Hz·1/s: pint는 rad = 1이라 2π가 빠진다. Hz 쪽을 초당 횟수로 보고 2π를 맞춘다.
@@ -608,7 +654,9 @@ def convert(payload: dict[str, Any]) -> dict[str, Any]:
         notes.append(CYCLE_NOTE)
     if "ton" in names:
         notes.append("ton is the US short ton (907.185 kg); the metric tonne (1000 kg) is t.")
-    if _is_offset(q):
+    if "food_calorie" in names:
+        notes.append("Cal (capital C) is the food calorie = 1 kcal = 4184 J; lowercase cal is 4.184 J.")
+    if _is_temperature_scale(q):
         notes.append(
             f"Converted {text} as a temperature reading. For a temperature change (ΔT) use delta_degC: "
             f"\"{_num(q.magnitude)} delta_degC\" = {_num(q.magnitude)} K."
@@ -634,6 +682,8 @@ def _preload() -> None:
     import sympy  # noqa: F401
 
     UREG = pint.UnitRegistry()
+    # 식품 칼로리: 영양 성분표의 Cal(대문자)은 kcal이다. pint에는 없어서 '모르는 단위'가 됐다.
+    UREG.define("food_calorie = kilocalorie = Cal")
 
 
 if __name__ == "__main__":
