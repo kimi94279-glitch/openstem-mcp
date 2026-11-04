@@ -19,9 +19,10 @@
 - 수식 문자열은 eval 전에 `mathexpr.check()`가 허용한 토큰만 통과시킨다.
 - (2026-11 점검 뒤) 자식 프로세스 환경은 `sandbox.child_env()`로 만든다: `OPENSTEM_LMS_*`와 이름에 TOKEN·SECRET·PASSWORD·PASSWD·API_KEY·ACCESS_KEY·CREDENTIAL·PRIVATE_KEY가 든 변수를 뺀다. 외부 입력을 다루는 프로세스가 LMS 토큰을 볼 이유가 없다. tectonic이 번들을 받아야 하므로 프록시·인증서·캐시 폴더 변수는 남긴다.
 - (2026-11 점검 뒤) POSIX 작업자는 `workers.serve()`에서 준비 신호 전에 `RLIMIT_AS`로 메모리 상한을 둔다. 기본 3072 MB(작업자 7종 import 뒤 주소 공간은 110~450 MB), `OPENSTEM_WORKER_MEMORY_MB`로 바꾸고 0이면 끈다. `MemoryError`는 "too large to compute" 에러로 돌려준다.
+- (2026-11 점검 후속) Windows 작업자는 `sandbox._spawn`이 띄운 직후 서버에 하나 있는 Job Object에 넣는다(ctypes, `JOB_OBJECT_LIMIT_PROCESS_MEMORY`로 프로세스별 커밋 메모리 상한, 같은 `OPENSTEM_WORKER_MEMORY_MB` 값 + `KILL_ON_JOB_CLOSE`로 서버가 끝나면 작업자도 끝남). 작업자가 스스로 거는 대신 서버가 거는 것은 Windows에 `resource`가 없고 job은 부모가 만들어 끝까지 열어 두어야 하기 때문이다. 만들거나 넣지 못하면(중첩 job을 못 쓰는 구버전 Windows) 경고 로그 한 줄을 남기고 상한 없이 돈다. 적용 여부는 `openstem-mcp --doctor`의 작업자 항목에 나온다.
 
 ## 결과
 
 - 무한 루프·폭주 입력이 서버를 멈추지 못한다. 첫 호출도 import 시간 때문에 시간 초과가 나지 않는다.
 - 호출마다 3~5초(예비 작업자가 있으면 계산 시간만).
-- **한계**: 이것은 프로세스 분리와 시간 제한(+ 메모리 상한: Linux `RLIMIT_AS`, Windows Job Object)이다. 작업자는 서버와 같은 사용자 권한으로 돌고, 파일 시스템·네트워크 접근을 운영체제 수준에서 막지 않는다. 메모리 상한은 macOS에서 사실상 먹지 않는다. 그래서 입력 검사(`mathexpr`, `texcheck`)가 1차 방어선이다. 자세한 범위는 [SECURITY.md](../../SECURITY.md).
+- **한계**: 이것은 프로세스 분리와 시간 제한(+ Linux·Windows 메모리 상한)이다. 작업자는 서버와 같은 사용자 권한으로 돌고, 파일 시스템·네트워크 접근을 운영체제 수준에서 막지 않는다. 메모리 상한은 macOS에서 사실상 먹지 않고, Windows에서는 작업자가 job에 들어가기 전 프로세스가 막 뜬 짧은 순간에는 없다. 그래서 입력 검사(`mathexpr`, `texcheck`)가 1차 방어선이다. 자세한 범위는 [SECURITY.md](../../SECURITY.md).

@@ -61,6 +61,7 @@ LLM이 읽는 글(툴·인자 설명, 에러·힌트·경고, 프롬프트·스�
 - **Windows에서 `uv sync`·`uv run` 실패**: Claude Desktop·Claude Code가 `uv run openstem-mcp`로 서버를 띄워 두면 `.venv\Scripts\openstem-mcp.exe`가 잠겨 프로젝트를 다시 설치하려다 실패한다. 그동안은 `uv run --no-sync pytest`를 쓰고, 의존성만 바꿀 때는 `uv sync --inexact --no-install-project`를 쓴다. 서버를 끄면 평소대로 된다.
 - **Claude Desktop에 개발 버전 붙이기**: 실행 중인 Claude Desktop은 `claude_desktop_config.json`을 메모리 사본으로 통째로 다시 써서, 앱이 켜져 있을 때 고친 내용은 사라진다. 앱을 완전히 끈 뒤(트레이 아이콘 → 종료) `python scripts/register_claude_desktop.py`를 실행하고 다시 켠다(앱이 켜져 있으면 스크립트가 거절한다). Claude Code 세션은 앱의 자식 프로세스라 앱을 끄면 같이 꺼지므로, 이 단계는 별도 터미널에서 한다.
 - **첫 호출이 느리다**: 작업자 import와 TeX 패키지 받기 때문이다. `--warmup`을 한 번 한다.
+- **설치 상태를 한 번에 보고 싶다**: `uv run openstem-mcp --doctor`(네트워크 빼려면 `--offline`, JSON은 `--json`). tectonic·TeX 준비·번들 서버·폴더 권한·작업자 import 시간과 메모리 상한 적용 여부를 보여 준다.
 
 ## AI 도구로 만든 기여
 
