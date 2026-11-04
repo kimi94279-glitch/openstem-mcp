@@ -149,6 +149,8 @@ openstem-mcp/
 
 export_document의 처리 순서다. 왜 정규식이 아니라 문서 구조를 쓰는지는 [결정 0006](decisions/0006-export-via-pandoc-ast.md).
 
+참고문헌(`bibliography`·`citation_style`)이 있으면 1단계에서 `--citeproc`으로 인용을 풀고 참고문헌을 붙인 뒤 같은 검사를 거친다(CSL 파일은 `render/csl/`, 출처는 [THIRD_PARTY.md](../THIRD_PARTY.md)). docx·pptx는 `render/reference.docx`·`reference.pptx`(맑은 고딕, A4, 16:9 테마, `render/refdocs.py`가 pandoc 기본 파일에서 만든다)나 사용자 `template`을 `--reference-doc`으로 쓴다.
+
 1. pandoc(pypandoc_binary, 3.9)으로 마크다운을 문서 구조(JSON)로 읽는다(`--sandbox`). 입력 형식은 `markdown-raw_tex-raw_html-raw_attribute-yaml_metadata_block`이라 마크다운 속 `\명령`은 글자로 나오고, YAML 머리말로 제목에 수식을 넣는 길도 막힌다.
 2. 구조 안의 모든 `Math`(texcheck + 중괄호 짝 + 한글 `\text{}` 감싸기)와 `Image`(결과물 폴더 안 파일만, URL·`data:` 등 거절, `%20` 풀어 읽기)를 검사·교체한다. 경로에 공백이 있는 그림(Windows 사용자 이름)은 `<경로>`로 감싸 준다.
 3. 배치(layout)별 규칙을 구조에서 검사한다(시험지: 정답 제목, 카드: 2열 표). 위반은 Lua 필터를 돌리기 전에 파이썬이 짧은 에러로 돌려준다. 배치는 Lua 필터(`render/exam.lua`, `render/flashcards.lua`, `render/tabular.lua`)가 만들고, 서버는 필터가 알아볼 클래스만 붙인다.

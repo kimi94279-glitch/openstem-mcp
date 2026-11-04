@@ -35,6 +35,7 @@ openstem-mcp는 사용자 PC에서 돌며, AI(MCP 호스트)가 보낸 입력과
 - TeX 코드(render_tikz, export_document의 수식)는 컴파일 전에 토큰 단위로 검사해 파일·외부에 닿는 명령과 이름을 조립하는 수단을 막는다. `\addplot`·TikZ `plot` 뒤의 데이터 소스는 `coordinates`와 식만 허용한다(table·file·function·gnuplot·graphics·shell, 매크로 인자는 거절). render_tikz 문서에는 그 밖에 pgf·pgfplots가 파일을 읽고 쓰는 내부 명령을 에러로 바꾸는 줄(`tikz.FILE_GUARD`)이 들어간다. tectonic은 `--untrusted`로 shell-escape를 끄고, 매번 빈 임시 폴더에서 컴파일한다([결정 0004](docs/decisions/0004-tex-token-check.md)).
 - read_document는 자료 폴더와 결과물 폴더 안 파일만 연다(심볼릭 링크·정션은 실제 경로로 다시 검사). 압축을 푼 크기에 상한을 둔다.
 - export_document는 결과물 폴더 안 그림만 넣고, URL·`data:` 그림과 raw TeX·HTML을 거절한다([결정 0006](docs/decisions/0006-export-via-pandoc-ast.md)).
+- export_document의 참고문헌 파일(`bibliography`, 2 MB)과 사용자 서식 템플릿(`template`)은 read_document와 같이 자료 폴더·결과물 폴더 안 파일만 받는다. 참고문헌은 `--sandbox` 단계의 pandoc이 읽고, 그 결과(참고문헌 글)에도 그림·수식 검사를 다시 건다. 템플릿은 zip 구조를 검사한 뒤 두 번째 단계 pandoc(sandbox 아님)이 읽는다.
 - LMS 토큰은 설정한 LMS 주소(https)로만 보내고 다른 origin으로 가는 리디렉션에는 싣지 않는다. 툴 결과와 서버 로그(호스트가 남기는 로그 파일 포함)에서 토큰과 캘린더 주소를 지운다. 비밀번호는 받지 않는다([결정 0008](docs/decisions/0008-lms-tokens-not-passwords.md)).
 - tectonic 자동 설치는 버전·크기·SHA-256을 코드에 고정한 공식 릴리스만 받는다([결정 0005](docs/decisions/0005-tectonic-auto-install.md)).
 - HTTP 모드는 기본으로 127.0.0.1에만 열고, 비밀 키가 틀린 요청은 모두 404다([결정 0009](docs/decisions/0009-http-mode-secret-url.md)).
