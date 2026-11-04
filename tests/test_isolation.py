@@ -157,6 +157,26 @@ def test_bwrap_mounts_follow_symlinks_and_skip_covered_paths(tmp_path):
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="bwrap·sandbox-exec 인자는 POSIX 경로를 다룬다")
+def test_bwrap_mounts_keep_intermediate_links(tmp_path):
+    """venv/bin/python → uv/cpython-3.14-…/bin/python3.14 이고 그 폴더가 다시 cpython-3.14.x-…를 가리키는 경우(CI에서 재현)."""
+    real = tmp_path / "cpython-3.14.0" / "bin"
+    real.mkdir(parents=True)
+    (real / "python3.14").write_text("x")
+    minor = tmp_path / "cpython-3.14"
+    minor.symlink_to(tmp_path / "cpython-3.14.0")
+    venv = tmp_path / "venv" / "bin"
+    venv.mkdir(parents=True)
+    (venv / "python").symlink_to(minor / "bin" / "python3.14")
+    m = isolation._Mounts()
+    m.add(str(tmp_path / "venv"), "ro")
+    m.add(str(venv / "python"), "ro")
+    args = m.args()
+    triples = [args[i:i + 3] for i, a in enumerate(args) if a in ("--symlink", "--ro-bind")]
+    assert ["--symlink", str(tmp_path / "cpython-3.14.0"), str(minor)] in triples
+    assert ["--ro-bind", str(real / "python3.14"), str(real / "python3.14")] in triples
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="bwrap·sandbox-exec 인자는 POSIX 경로를 다룬다")
 def test_bwrap_network_only_for_tectonic(tmp_path):
     worker = isolation._bwrap_args(["python"], isolation.Spec(write=(tmp_path,), python=True))
     tex = isolation._bwrap_args(["tectonic"], isolation.tectonic_spec(sys.executable, tmp_path))

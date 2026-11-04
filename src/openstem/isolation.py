@@ -266,7 +266,9 @@ class _Mounts:
                 if not self._covered(cur, ("ro", "rw")):
                     self.links[cur] = os.readlink(cur)
                 rest = os.path.relpath(path, cur)
-                target = os.path.realpath(cur)
+                # 링크가 가리키는 글자 그대로의 경로를 따라간다(realpath로 건너뛰면 중간 링크가 격리 안에 없다:
+                # uv의 cpython-3.14-… → cpython-3.14.x-… 같은 폴더 링크)
+                target = os.path.normpath(os.path.join(os.path.dirname(cur), os.readlink(cur)))
                 self.add(target if rest == "." else os.path.join(target, rest), kind, depth + 1)
                 return
         if not os.path.exists(path):
