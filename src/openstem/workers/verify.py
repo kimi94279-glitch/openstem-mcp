@@ -39,7 +39,9 @@ SAMPLE_LIMIT = SAMPLE_BANDS[4][1] // 100
 NUMERIC_ATTEMPTS = 80
 REL_TOL = 1e-8
 ABS_TOL = 1e-150  # 0 근처 값만 절대 오차로 본다(그 밖은 상대 오차)
-SCAN_RANGE = (-10.0, 10.0)
+# 수치로 근·구간을 찾을 때 넓혀 가는 범위. ±10에서 못 본 것(exp(x) = x**10의 x ≈ 35.77)을 시간이 남는 동안 찾는다.
+SCAN_RINGS = (10.0, 100.0, 1000.0)
+RING_MIN_TIME = 1.5  # 다음 범위로 넓히려면 남아 있어야 하는 시간(초)
 SCAN_STEPS = 4001
 MAX_SOLUTIONS = 10
 MAX_TEXT = 800
@@ -172,6 +174,106 @@ def parse_equation(text: str, latex: bool, where: str) -> sp.Expr:
     if len(sides) == 2:
         return parse(sides[0], False, f"{where} left side") - parse(sides[1], False, f"{where} right side")
     return parse(text, False, where)
+
+
+# ── 정의역(읽는 순간 지워지는 분모·로그·제곱근) ───────────────────────
+
+
+@dataclass(frozen=True)
+class Condition:
+    """원식이 정의되려면 필요한 조건 하나. kind: nonzero(분모) | nonneg(짝수 제곱근) | pos(로그, 음수 지수의 짝수 제곱근)."""
+
+    kind: str
+    base: sp.Expr  # 계산한 꼴(x - 1)
+    source: str  # 어디서 왔나(1/(x - 1), sqrt(x), log(x))
+
+    def relation(self) -> sp.Basic:
+        return {"nonzero": sp.Ne, "nonneg": sp.Ge, "pos": sp.Gt}[self.kind](self.base, 0)
+
+    def text(self) -> str:
+        sign = {"nonzero": "≠", "nonneg": "≥", "pos": ">"}[self.kind]
+        return f"{sstr(self.base)} {sign} 0 (from {self.source})"
+
+
+def _conditions_of(expr: sp.Basic) -> list[Condition]:
+    found: dict[tuple[str, sp.Basic], Condition] = {}
+
+    def add(kind: str, base: sp.Basic, source: sp.Basic) -> None:
+        base = exact(base.doit())
+        if not isinstance(base, sp.Expr) or not base.free_symbols:
+            return
+        relation = {"nonzero": sp.Ne, "nonneg": sp.Ge, "pos": sp.Gt}[kind](base, 0)
+        if relation is sp.true:  # x**2 + 1 ≠ 0, exp(x) > 0처럼 늘 성립
+            return
+        found.setdefault((kind, base), Condition(kind, base, clip(sstr(source.doit()))))
+
+    for node in sp.preorder_traversal(expr):
+        if isinstance(node, sp.Pow):
+            power = exact(node.exp.doit())
+            if not power.is_number or power.is_real is not True:
+                continue
+            even_root = power.is_integer is not True and not (isinstance(power, sp.Rational) and power.q % 2 == 1)
+            if even_root:
+                add("pos" if power.is_negative else "nonneg", node.base, node)
+            elif power.is_negative:
+                add("nonzero", node.base, node)
+        elif isinstance(node, sp.log) and len(node.args) == 1:
+            add("pos", node.args[0], node)
+    return list(found.values())
+
+
+def domain_conditions(texts: list[str], latex: bool) -> list[Condition]:
+    """식을 계산하지 않고 읽어(evaluate=False) 분모·로그·짝수 제곱근의 조건을 모은다.
+
+    sympy는 읽는 순간 x/x를 1로, 1/(x-1) - 1/(x-1)을 0으로 지워 버려서 원식 대입으로는 x = 0, x = 1을 거를 수 없다.
+    LaTeX는 계산한 꼴에서만 모은다(지워진 부분은 못 본다). 읽지 못하면 조건 없이 넘어간다.
+    """
+    conditions: list[Condition] = []
+    for text in texts:
+        try:
+            expr = parse(text, True, "expr", allow_equation=True) if latex else mathexpr.parse(text, None, positive=POSITIVE, evaluate=False)
+            conditions += _conditions_of(expr)
+        except Exception:  # 덧붙이는 확인이라 실패하면 생략
+            continue
+    return list(dict.fromkeys(conditions))
+
+
+def equation_sides(text: str) -> list[str]:
+    return [side for side in text.replace("==", "=").split("=") if side.strip()]
+
+
+def violated(conditions: list[Condition], point: dict[sp.Symbol, sp.Basic]) -> Condition | None:
+    """그 점에서 깨지는 조건(분모가 0, 로그 인자가 0 이하 등). 값이 숫자로 정해지지 않으면 보지 않는다."""
+    for cond in conditions:
+        if not cond.base.free_symbols <= set(point):
+            continue
+        value = cond.base.subs(point)
+        if not value.is_number:
+            continue
+        try:
+            zero = value.is_zero if value.is_zero is not None else abs(complex(sp.N(value, 30))) < 1e-20
+            negative = value.is_negative if value.is_negative is not None else complex(sp.N(value, 30)).real < 0
+        except (TypeError, ValueError):
+            continue
+        if (zero and cond.kind in ("nonzero", "pos")) or (negative and cond.kind in ("nonneg", "pos")):
+            return cond
+    return None
+
+
+def domain_set(conditions: list[Condition], v: sp.Symbol, budget: Budget) -> sp.Set | None:
+    """v 하나의 조건들이 정하는 실수 집합. 다른 문자가 섞이거나 못 풀면 None."""
+    domain: sp.Set = sp.Interval.open(0, sp.oo) if v.is_positive else sp.S.Reals
+    for cond in conditions:
+        if cond.base.free_symbols != {v}:
+            return None
+        try:
+            part = budget.run(sp.solveset, cond.relation(), v, sp.S.Reals, cap=EXTRA_CAP)
+        except Exception:  # 시간 초과 등
+            return None
+        if part.has(sp.ConditionSet):
+            return None
+        domain = domain.intersect(part)
+    return domain
 
 
 def parse_point(text: str) -> tuple[sp.Basic, str | None]:
@@ -384,8 +486,29 @@ def positive_equal(a: sp.Basic, b: sp.Basic, budget: Budget) -> bool:
         return False
 
 
-def numeric_roots(expr: sp.Expr, v: sp.Symbol) -> list[float]:
-    """[-10, 10]을 훑어 부호가 바뀌는 곳을 이분법으로 좁힌다. 극(발산)은 버린다."""
+def scan_grid(positive: bool, steps: int, budget: Budget | None) -> tuple[np.ndarray, float]:
+    """훑을 점들과 닿은 범위. ±10을 steps개로 나누고, 시간이 남으면 ±10~100, ±100~1000도 같은 수로 나눠 붙인다."""
+    inner = SCAN_RINGS[0]
+    pieces = [np.linspace(0.0 if positive else -inner, inner, steps)]
+    reach = inner
+    for outer in SCAN_RINGS[1:]:
+        if budget is not None and budget.left() < RING_MIN_TIME:
+            break
+        right = np.linspace(reach, outer, steps)[1:]
+        pieces = [*([] if positive else [-right[::-1]]), *pieces, right]
+        reach = outer
+    return np.concatenate(pieces), reach
+
+
+def range_text(positive: bool, reach: float) -> str:
+    return f"[{0 if positive else -reach:g}, {reach:g}]"
+
+
+def numeric_roots(expr: sp.Expr, v: sp.Symbol, budget: Budget | None = None) -> tuple[list[float], float, bool]:
+    """scan_grid의 점을 훑어 부호가 바뀌는 곳을 이분법으로 좁힌다. 극(발산)은 버린다.
+
+    (근, 닿은 범위, 더 있었는지)를 돌려준다. 근이 MAX_SOLUTIONS개를 넘으면 0에 가까운 것부터 남긴다.
+    """
     fn = sp.lambdify(v, expr, "numpy")
 
     def f(x: float) -> float:
@@ -393,7 +516,7 @@ def numeric_roots(expr: sp.Expr, v: sp.Symbol) -> list[float]:
             y = complex(fn(np.float64(x)))
         return y.real if abs(y.imag) < 1e-12 and np.isfinite(y.real) else float("nan")
 
-    xs = np.linspace(*SCAN_RANGE, SCAN_STEPS)
+    xs, reach = scan_grid(bool(v.is_positive), SCAN_STEPS, budget)
     ys = [f(x) for x in xs]
     roots: list[float] = []
     for (x0, y0), (x1, y1) in zip(zip(xs, ys), zip(xs[1:], ys[1:])):
@@ -420,9 +543,10 @@ def numeric_roots(expr: sp.Expr, v: sp.Symbol) -> list[float]:
             roots.append(root)
     unique: list[float] = []
     for r in roots:
-        if not unique or abs(r - unique[-1]) > 1e-7:
+        if not unique or abs(r - unique[-1]) > 1e-7 * max(1.0, abs(r)):
             unique.append(float(f"{r:.10g}"))
-    return unique[:MAX_SOLUTIONS]
+    kept = sorted(sorted(unique, key=abs)[:MAX_SOLUTIONS])
+    return kept, reach, len(unique) > len(kept)
 
 
 # ── op ──────────────────────────────────────────────────────────────
@@ -468,6 +592,8 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     try:
         if budget.run(sp.simplify, ea - eb) == 0:
             out.update(matches=True, method="symbolic")
+            if note := domain_note(p, symbols, budget):
+                out["note"] = note
             return out
         verdict = budget.run(ea.equals, eb)
     except TimeoutError:
@@ -475,6 +601,8 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         notes.append("Symbolic check did not finish in time.")
     if verdict is True:
         out.update(matches=True, method="symbolic")
+        if note := domain_note(p, symbols, budget):
+            out["note"] = note
         return out
     if verdict is False and symbols and (not numeric["checked"] or not numeric.get("domain_note")):
         # sympy의 equals()는 복소수 점에서도 비교한다. 실수 점에서 반례가 없으면 '다르다'고 단정하지 않는다
@@ -502,8 +630,32 @@ def op_equal(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
             notes.append("The two values agree numerically (not a proof).")
     if recheck and positive_equal(ea, eb, budget):
         notes.append(POSITIVE_NOTE)
+    if note := domain_note(p, symbols, budget):
+        notes.append(note)
     out["note"] = " ".join(notes)
     return out
+
+
+def domain_note(p: dict[str, Any], symbols: list[sp.Symbol], budget: Budget) -> str | None:
+    """같다고 본 두 식의 원래 정의역이 다르면 알린다. sqrt(x)*sqrt(x)는 읽는 순간 x가 되지만 x < 0에서는 값이 없다."""
+    sides = {"expr": domain_conditions([p["expr"]], p["latex"]), "against": domain_conditions([p["against"]], p["latex"])}
+    if not any(sides.values()):
+        return None
+    if len(symbols) == 1:
+        v = symbols[0]
+        domains = {name: domain_set(conds, v, budget) for name, conds in sides.items()}
+        if None not in domains.values():
+            if domains["expr"] == domains["against"]:
+                return None
+            parts = []
+            for name, other in (("expr", "against"), ("against", "expr")):
+                gap = domains[other] - domains[name]
+                if gap != sp.S.EmptySet:
+                    parts.append(f"{name} is undefined for {v.name} in {set_text(gap)} (needs {'; '.join(c.text() for c in sides[name])}) while {other} is defined there.")
+            return " ".join([*parts, "They are equal only where both are defined."]) if parts else None
+    extra = {name: [c for c in conds if c not in sides["against" if name == "expr" else "expr"]] for name, conds in sides.items()}
+    parts = [f"{name} needs {'; '.join(c.text() for c in conds)}, against does not." if name == "expr" else f"against needs {'; '.join(c.text() for c in conds)}, expr does not." for name, conds in extra.items() if conds]
+    return " ".join([*parts, "They are equal only where both are defined."]) if parts else None
 
 
 def _log_abs_note(a: sp.Basic, b: sp.Basic, symbols: list[sp.Symbol]) -> list[str]:
@@ -591,10 +743,17 @@ def check_root(eq: sp.Expr, point: dict[sp.Symbol, sp.Basic]) -> str | None:
     return None
 
 
-def _drop_false_roots(eq: sp.Expr, v: sp.Symbol, roots: list[sp.Basic], notes: list[str]) -> list[sp.Basic]:
+def root_problem(eq: sp.Expr, point: dict[sp.Symbol, sp.Basic], conditions: list[Condition]) -> str | None:
+    """원식이 그 점에서 정의되지 않거나(읽을 때 지워진 분모 포함) 두 변이 다르면 이유를 돌려준다."""
+    if cond := violated(conditions, point):
+        return f"the original equation is undefined there: needs {cond.text()}"
+    return check_root(eq, point)
+
+
+def _drop_false_roots(eq: sp.Expr, v: sp.Symbol, roots: list[sp.Basic], notes: list[str], conditions: list[Condition]) -> list[sp.Basic]:
     kept, dropped = [], []
     for r in roots:
-        reason = check_root(eq, {v: r})
+        reason = root_problem(eq, {v: r}, conditions)
         (dropped if reason else kept).append((r, reason))
     if dropped:
         notes.append(
@@ -605,7 +764,8 @@ def _drop_false_roots(eq: sp.Expr, v: sp.Symbol, roots: list[sp.Basic], notes: l
     return [r for r, _ in kept]
 
 
-def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
+def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget, conditions: list[Condition] | None = None) -> dict[str, Any]:
+    conditions = conditions or []
     out: dict[str, Any] = {"parsed": f"{clip(sstr(eq))} = 0", "variable": v.name}
     others = ", ".join(sorted(s.name for s in eq.free_symbols - {v}))
     notes: list[str] = []
@@ -627,8 +787,21 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
         except Exception:
             pass
         return out
+    if sol in (sp.S.Reals, sp.Interval.open(0, sp.oo)) and conditions:
+        domain = domain_set(conditions, v, budget)
+        if domain is not None and domain != sol:
+            sol = domain
+            out["result"] = set_text(domain)
+            out["latex"] = clip(sp.latex(domain))
+            out["note"] = (
+                "Every number where the original equation is defined is a solution (identity on its domain). "
+                f"Excluded where it is undefined: needs {'; '.join(c.text() for c in conditions)}."
+            )
+            return out
+        if domain is None:
+            notes.append(f"Holds wherever the original equation is defined: needs {'; '.join(c.text() for c in conditions)}.")
     if sol == sp.S.Reals:
-        out["note"] = "Every real number is a solution (identity)."
+        out["note"] = " ".join(["Every real number is a solution (identity).", *notes])
         return out
     if sol is not None and _periodic(sol):
         out["general"] = show(sol)
@@ -637,7 +810,7 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
         try:
             near = budget.run(sol.intersect, window, cap=EXTRA_CAP)
             if isinstance(near, sp.FiniteSet) and near:
-                near = _drop_false_roots(eq, v, sorted(near, key=sp.default_sort_key), notes)
+                near = _drop_false_roots(eq, v, sorted(near, key=sp.default_sort_key), notes, conditions)
                 out["solutions"] = [show(s) for s in near[:MAX_SOLUTIONS]]
                 notes.append(f"solutions lists those in {label}.")
         except Exception:
@@ -645,7 +818,17 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
         out["note"] = " ".join(notes)
         return out
 
+    if sol is not None and conditions and not isinstance(sol, sp.FiniteSet) and (domain := domain_set(conditions, v, budget)) is not None:
+        try:  # |x| = x처럼 구간이 해일 때 원식이 정의되지 않는 점을 뺀다
+            sol = budget.run(sol.intersect, domain, cap=EXTRA_CAP)
+        except Exception:
+            pass
     found = _finite_part(sol) if sol is not None else None
+    if found is None and sol is not None and not others and sol.atoms(sp.Interval) and not sol.has(sp.ConditionSet, sp.ImageSet):
+        out["result"] = set_text(sol)  # |x| = x의 해는 [0, oo)처럼 구간이다
+        out["latex"] = clip(sp.latex(sol))
+        out["note"] = " ".join(["The solutions form an interval (every number in result is a solution).", *notes])
+        return out
     if found is None and others:  # 문자가 섞인 공식은 solve가 더 잘 푼다(T = 2*pi*sqrt(L/g) → L)
         try:
             found = budget.run(sp.solve, eq, v) or None
@@ -655,7 +838,7 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
         notes.append(f'Solutions valid when real, depending on the other letters ({others}). For physical quantities solve with assume="positive".')
     if found is not None:
         if found:
-            found = _drop_false_roots(eq, v, list(found), notes)
+            found = _drop_false_roots(eq, v, list(found), notes, conditions)
             if not found:
                 out["solutions"] = []
                 out["note"] = " ".join([*notes, "No real solutions."])
@@ -673,11 +856,14 @@ def _solve_single(eq: sp.Expr, v: sp.Symbol, budget: Budget) -> dict[str, Any]:
             f"so roots cannot be found numerically either. Substitute values for {others} and solve again."
         )
         return out
-    roots = numeric_roots(eq, v)
+    roots, reach, more = numeric_roots(eq, v, budget)
+    roots = [r for r in roots if not violated(conditions, {v: sp.Float(r)})]
     if v.is_positive:
         roots = [r for r in roots if r > 0]
     out["solutions"] = [{"approx": r} for r in roots]
-    out["note"] = f"Could not solve symbolically; found roots numerically in [{SCAN_RANGE[0]:g}, {SCAN_RANGE[1]:g}] (roots outside may be missing)."
+    out["note"] = f"Could not solve symbolically; found roots numerically in {range_text(bool(v.is_positive), reach)} (roots outside may be missing)."
+    if more:
+        out["note"] += f" More than {MAX_SOLUTIONS} roots found; showing the {MAX_SOLUTIONS} closest to 0."
     return out
 
 
@@ -685,7 +871,8 @@ def op_solve(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
     texts = [t for t in p["expr"].split(";") if t.strip()]
     if any(INEQUALITY_SIGN.search(t) for t in texts):
         return solve_inequalities(texts, p, budget)
-    eqs =[parse_equation(t, p["latex"], f"equation {i + 1}") for i, t in enumerate(texts)]
+    eqs = [parse_equation(t, p["latex"], f"equation {i + 1}") for i, t in enumerate(texts)]
+    conditions = domain_conditions([side for t in texts for side in equation_sides(t)], p["latex"])
     names = [n.strip() for n in (p.get("var") or "").split(",") if n.strip()]
     free = sorted(set().union(*(e.free_symbols for e in eqs)), key=lambda s: s.name)
     by_name = {s.name: s for s in free}
@@ -701,11 +888,11 @@ def op_solve(p: dict[str, Any], budget: Budget) -> dict[str, Any]:
         raise WorkerError([f"Set the unknowns with var (e.g. var=\"x, y\"). Variables present: {', '.join(s.name for s in free)}"])
 
     if len(eqs) == 1 and len(unknowns) == 1:
-        return _solve_single(eqs[0], unknowns[0], budget)
+        return _solve_single(eqs[0], unknowns[0], budget, conditions)
     solutions = budget.run(lambda: sp.solve(eqs, unknowns, dict=True))
     dropped = []
     for sol in list(solutions):
-        reasons = [r for e in eqs if (r := check_root(e, sol))]
+        reasons = [r for e in eqs if (r := root_problem(e, sol, conditions))]
         if reasons:
             solutions.remove(sol)
             dropped.append(", ".join(f"{k.name} = {sstr(val)}" for k, val in sol.items()) + f" ({reasons[0]})")
@@ -959,8 +1146,11 @@ def _polynomial_set(rel: sp.Basic, v: sp.Symbol) -> sp.Set:
     return found
 
 
-def _numeric_set(rel: sp.Basic, v: sp.Symbol) -> sp.Set:
-    """기호로 못 풀 때: SCAN_RANGE(양수면 0부터)에서 성립하는 구간을 찾고, 경계는 이분법으로 좁힌다."""
+def _numeric_set(rel: sp.Basic, v: sp.Symbol, budget: Budget | None = None) -> tuple[sp.Set, float, list[float]]:
+    """기호로 못 풀 때: scan_grid(양수면 0부터)에서 성립하는 구간을 찾고, 경계는 이분법으로 좁힌다.
+
+    (구간, 닿은 범위, 탐색 끝에서도 성립한 끝점들)을 돌려준다. 끝점에서 성립하면 구간이 그 밖으로 이어질 수 있다.
+    """
     fn = sp.lambdify(v, rel.lhs - rel.rhs, "numpy")
     compare = COMPARE[rel.rel_op]
 
@@ -970,7 +1160,8 @@ def _numeric_set(rel: sp.Basic, v: sp.Symbol) -> sp.Set:
                 y = complex(fn(np.float64(x)))
             except (ZeroDivisionError, ValueError, OverflowError, TypeError):
                 return False
-        return abs(y.imag) < 1e-12 and bool(np.isfinite(y.real)) and bool(compare(y.real, 0))
+        # exp(1000)처럼 넘친 값(inf)도 크기 비교는 맞다. nan만 버린다.
+        return abs(y.imag) < 1e-12 and not bool(np.isnan(y.real)) and bool(compare(y.real, 0))
 
     def short(x: float) -> sp.Number:
         value = float(f"{x:.7g}")
@@ -983,8 +1174,9 @@ def _numeric_set(rel: sp.Basic, v: sp.Symbol) -> sp.Set:
             a, b = (mid, b) if holds(mid) == fa else (a, mid)
         return short((a + b) / 2)
 
-    xs = np.linspace(0.0 if v.is_positive else SCAN_RANGE[0], SCAN_RANGE[1], SCAN_STEPS_INEQ)
+    xs, reach = scan_grid(bool(v.is_positive), SCAN_STEPS_INEQ, budget)
     flags = [holds(x) for x in xs]
+    open_ends = [float(xs[i]) for i in ((-1,) if v.is_positive else (0, -1)) if flags[i]]
     found: sp.Set = sp.S.EmptySet
     start = short(xs[0]) if flags[0] else None
     for i in range(1, len(xs)):
@@ -995,7 +1187,7 @@ def _numeric_set(rel: sp.Basic, v: sp.Symbol) -> sp.Set:
             start = None
     if start is not None:
         found = found | sp.Interval.Lopen(start, short(xs[-1]))
-    return found
+    return found, reach, open_ends
 
 
 def _inequality_set(rel: sp.Basic, v: sp.Symbol, domain: sp.Set, budget: Budget, notes: list[str]) -> sp.Set:
@@ -1010,10 +1202,16 @@ def _inequality_set(rel: sp.Basic, v: sp.Symbol, domain: sp.Set, budget: Budget,
         sol = None
     if sol is not None and not sol.has(sp.ConditionSet):
         return sol
-    lo = 0 if v.is_positive else SCAN_RANGE[0]
-    notes.append(f"'{sstr(rel)}' could not be solved symbolically; searched numerically in [{lo:g}, {SCAN_RANGE[1]:g}] (bounds are approximate; outside not checked).")
+    found, reach, open_ends = _numeric_set(rel, v, budget)
+    notes.append(
+        f"'{sstr(rel)}' could not be solved symbolically; searched numerically in {range_text(bool(v.is_positive), reach)} "
+        "(bounds are approximate; outside not checked)."
+    )
+    if open_ends:
+        ends = " and ".join(f"{v.name} = {x:g}" for x in open_ends)
+        notes.append(f"It still holds at {ends}, the end of the search, so the interval may continue beyond the searched range.")
     notes.append(NUMERIC_MARK)
-    return _numeric_set(rel, v)
+    return found
 
 
 def solve_inequalities(texts: list[str], p: dict[str, Any], budget: Budget) -> dict[str, Any]:
@@ -1040,6 +1238,15 @@ def solve_inequalities(texts: list[str], p: dict[str, Any], budget: Budget) -> d
             found = sp.S.EmptySet
         elif rel != sp.true:
             found = sp.Intersection(found, _inequality_set(rel, v, domain, budget, notes))
+    conditions = domain_conditions([side for text in texts for side in mathexpr.split_relation(text)[0]], False)
+    if conditions and found != sp.S.EmptySet and (defined := domain_set(conditions, v, budget)) is not None and defined != domain:
+        try:  # x/x > 0처럼 읽을 때 지워진 분모·로그의 조건
+            narrowed = budget.run(found.intersect, defined, cap=EXTRA_CAP)
+            if narrowed != found:
+                found = narrowed
+                notes.append(f"Excluded where the original inequality is undefined: needs {'; '.join(c.text() for c in conditions)}.")
+        except Exception:
+            pass
     if found.atoms(sp.CRootOf):
         found = approx_roots(found)
         notes.append("Bounds not expressible in radicals are decimal approximations.")

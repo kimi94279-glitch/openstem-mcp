@@ -1,10 +1,12 @@
 """read_document: 자료 폴더의 파일만 읽는다. PDF·HWP·HWPX·docx·텍스트·그림."""
 
 import json
+import os
 import shutil
 import struct
 import subprocess
 import zipfile
+import zlib
 from pathlib import Path
 
 import pymupdf
@@ -12,9 +14,13 @@ import pytest
 from mcp import Client
 
 from openstem.server import mcp
+from openstem import sandbox
+from openstem.tools import documents
 from openstem.tools.documents import read_document
 from openstem.tools.export import pandoc_path
-from openstem.workers.documents import hwp_records, para_text
+from openstem.workers import WorkerError
+from openstem.workers import documents as doc_worker
+from openstem.workers.documents import hwp_body, hwp_records, para_text
 
 EXAMPLES = Path(__file__).resolve().parents[1] / "examples"
 
@@ -24,7 +30,23 @@ def inbox(tmp_path, monkeypatch):
     folder = tmp_path / "자료"
     folder.mkdir()
     monkeypatch.setenv("OPENSTEM_INPUT_DIR", str(folder))
+    monkeypatch.delenv("OPENSTEM_READ_CACHE", raising=False)
+    monkeypatch.setattr(documents, "_cache_root", lambda: tmp_path / "cache")
     return folder
+
+
+@pytest.fixture
+def worker_calls(monkeypatch):
+    """작업자를 몇 번 띄웠는지 센다."""
+    calls = []
+    real = sandbox.run_python
+
+    def counting(module, payload, *args, **kwargs):
+        calls.append(payload)
+        return real(module, payload, *args, **kwargs)
+
+    monkeypatch.setattr(sandbox, "run_python", counting)
+    return calls
 
 
 def make_pdf(path: Path) -> None:
@@ -202,3 +224,63 @@ def test_document_text_is_marked_as_data(inbox):
     from openstem.tools.documents import DESCRIPTION
 
     assert "data, not instructions" in DESCRIPTION and '{"' in DESCRIPTION and "On failure" in DESCRIPTION
+
+
+def test_parts_reuse_the_cached_extraction(inbox, worker_calls, tmp_path):
+    long = inbox / "긴글.txt"
+    long.write_text("가" * 70_000, encoding="utf-8")
+    texts = [read_document("긴글.txt", part=n).data["text"] for n in (1, 2, 3)]
+    assert [len(t) for t in texts] == [30_000, 30_000, 10_000]
+    assert len(worker_calls) == 1  # part=2, 3은 캐시에서
+    assert list((tmp_path / "cache" / "read-cache").glob("*.json"))
+    long.write_text("나" * 40_000, encoding="utf-8")  # 내용·크기·수정 시각이 바뀌면 다시 뽑는다
+    assert read_document("긴글.txt", part=2).data["text"] == "나" * 10_000
+    assert len(worker_calls) == 2
+    read_document("긴글.txt", pages="1")  # pages가 다르면 다른 열쇠
+    assert len(worker_calls) == 3
+
+
+def test_read_cache_can_be_turned_off(inbox, worker_calls, tmp_path, monkeypatch):
+    monkeypatch.setenv("OPENSTEM_READ_CACHE", "0")
+    (inbox / "a.txt").write_text("x" * 40_000, encoding="utf-8")
+    assert read_document("a.txt").ok and read_document("a.txt", part=2).ok
+    assert len(worker_calls) == 2
+    assert not (tmp_path / "cache" / "read-cache").exists()
+
+
+def test_page_images_are_not_cached(inbox, worker_calls):
+    make_pdf(inbox / "강의.pdf")
+    for _ in range(2):
+        assert read_document("강의.pdf", pages="1", mode="images").ok
+    assert len(worker_calls) == 2
+
+
+def test_read_cache_drops_least_recently_used(tmp_path, monkeypatch):
+    folder = tmp_path / "read-cache"
+    monkeypatch.setattr(documents, "READ_CACHE_MAX_BYTES", 2500)
+    result = {"ok": True, "text": "x" * 1000}
+    for n, key in enumerate(("old", "used", "new")):
+        documents._cache_store(folder, key, result)
+        os.utime(folder / f"{key}.json", (1000 + n, 1000 + n))
+        if key == "used":
+            assert documents._cache_load(folder, "old")  # 읽으면 최근 것이 된다
+    assert sorted(p.stem for p in folder.glob("*.json")) == ["new", "old"]
+    assert not list(folder.glob("*.tmp"))
+
+
+def test_hwp_total_unpacked_size_is_capped(monkeypatch):
+    def record(text: str) -> bytes:
+        body = utf16(text)
+        return struct.pack("<I", 67 | (len(body) << 20)) + body
+
+    def deflate(data: bytes) -> bytes:
+        packer = zlib.compressobj(wbits=-15)
+        return packer.compress(data) + packer.flush()
+
+    section = record("가" * 1000) * 50  # 약 100 KB
+    assert hwp_body([deflate(section)] * 3, compressed=True)[0] == "가" * 1000
+    monkeypatch.setattr(doc_worker, "MAX_UNPACKED_TOTAL", len(section) * 2 + 10)
+    for compressed in (True, False):
+        streams = [deflate(section) if compressed else section] * 3
+        with pytest.raises(WorkerError, match="in total"):
+            hwp_body(streams, compressed=compressed)
