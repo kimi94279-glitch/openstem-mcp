@@ -26,6 +26,7 @@ STARTUP_HINT = "On a first run loading the libraries can be slow; try once more.
 DESCRIPTION = r"""Plot measured data with error bars and fit a curve (equation with ± standard errors, R²). For lab reports.
 Example: {"series": [{"x": [0.1, 0.2, 0.3], "y": [0.52, 0.98, 1.55], "yerr": 0.05}], "fit": "linear", "x_label": "m (kg)"}
 Or paste CSV/markdown table text in `table` and pick columns by header name; "2.3 ± 0.1" is value ± error. fit: linear, poly2, poly3, exponential, power, log.
+The data actually plotted is saved as source_path (.csv) and fits/inputs in record_path (.json); to redo the analysis later, read them.
 On failure: errors name the series/column/row; fix it and call again."""
 
 
@@ -169,6 +170,9 @@ def plot_data(
         if result.get("pdf"):
             pdf_path = stem.with_suffix(".pdf")
             shutil.copyfile(sandbox.worker_file(Path(tmp), result["pdf"]), pdf_path)
+        csv_text = None
+        if result.get("csv") and output.record_enabled():
+            csv_text = sandbox.worker_file(Path(tmp), result["csv"]).read_text(encoding="utf-8")
 
     data: dict[str, Any] = {
         "ok": True,
@@ -179,5 +183,23 @@ def plot_data(
     }
     if result.get("warnings"):
         data["warnings"] = result["warnings"]
+    output.save_record(
+        data,
+        stem,
+        "plot_data",
+        inputs={
+            "series": series,
+            "table": table,
+            **columns,
+            "fit": fit,
+            **texts,
+            "log_x": log_x,
+            "log_y": log_y,
+            "name": name,
+        },
+        results={"series": result["series"]},  # 맞춤 계수·표준오차·R²
+        versions=result.get("versions"),
+        sources={".csv": csv_text} if csv_text is not None else None,
+    )
     data["check"] = "Check the preview: do points, error bars and the fit curve match the data, and are the equation values plausible?"
     return ToolResult(ok=True, data=data, preview_png=png_path.read_bytes())

@@ -21,7 +21,7 @@ tectonic · pandoc (외부 실행 파일)        workers/*.py (python -I -m, 별
    │                                   │
    └───────────────┬───────────────────┘
                    ▼
-결과물 폴더 (output.py)   <YYYYMMDD-HHMMSS>_<이름>.svg / .pdf / .png / .docx / ...
+결과물 폴더 (output.py)   <YYYYMMDD-HHMMSS>_<이름>.svg / .pdf / .png / .docx / ... + .json(재현 기록)·원본
 ```
 
 ## 설계 원칙
@@ -177,6 +177,12 @@ export_document의 처리 순서다. 왜 정규식이 아니라 문서 구조를
 
 - 저장 폴더: `OPENSTEM_OUTPUT_DIR`, 없으면 `~/OpenSTEM/`.
 - 파일 이름: `<YYYYMMDD-HHMMSS>_<이름>.<확장자>`. 같은 그림의 svg·pdf·png는 이름이 같다. `output.new_stem`이 프로세스 안에서 나눠 준 stem을 기억해, 같은 초·같은 이름의 동시 호출이 서로 덮어쓰지 않게 한다.
+- **재현 기록**: 결과물을 만드는 툴은 `output.save_record()`로 같은 stem 옆에 `<stem>.json`과 원본을 남긴다. 다른 대화에서 그림을 고치거나 보고서의 분석을 다시 하기 위한 것이다([MANIFESTO](../MANIFESTO.md)의 재현 가능한 연구).
+  - 원본: render_tikz는 사용자가 보낸 `code`를 `<stem>.tex`(서버가 감싼 전체 문서는 `<stem>.full.tex`), export_document는 입력 마크다운을 `<stem>.md`, plot_data는 실제로 그린 데이터를 `<stem>.csv`로. plot_function·render_molecule은 식·SMILES가 기록의 `inputs`에 있어 원본 파일이 따로 없다.
+  - `<stem>.json`: `schema`, `tool`, `openstem_version`, `versions`(그 툴이 쓴 것만: tectonic `--version` 첫 줄, pandoc, sympy·numpy·matplotlib·rdkit·pymupdf), `created`(ISO 시각), `inputs`(툴 인자 전체), `outputs`(같은 stem의 파일 이름), `results`(맞춤 계수·표준오차·R², 분자식·분자량, `parsed` 식·축 범위, 시험지 `problems` 등), `warnings`(특이점 경고 등), `source`.
+  - 작업자에서만 import하는 라이브러리(sympy·numpy·matplotlib·RDKit·pymupdf)의 버전은 작업자가 결과의 `versions`에 실어 보낸다. 서버는 이 라이브러리를 import하지 않는다. tectonic 버전은 실행 파일마다 한 번만 묻는다.
+  - 기록에는 이 PC의 경로를 남기지 않는다(`output.portable()`: 결과물 폴더 안 경로는 상대 경로, 홈 폴더는 `~`). 이 툴들은 비밀을 인자로 받지 않는다.
+  - 툴 결과에 `source_path`(원본이 있을 때)와 `record_path`를 싣는다. `OPENSTEM_RECORD=0`이면 쓰지 않는다. 저장이 실패해도 툴은 성공이고 `warnings`에 한 줄을 더한다.
 - `output.env_value()`는 빈 값과 채워지지 않은 자리표시자(`${user_config.x}`)를 둘 다 "설정 안 함"으로 본다(Claude Desktop 확장·플러그인이 비워 둔 설정을 그렇게 넘길 수 있다).
 
 ## 설정(환경변수)
@@ -186,6 +192,7 @@ export_document의 처리 순서다. 왜 정규식이 아니라 문서 구조를
 | `OPENSTEM_OUTPUT_DIR` | 결과물 폴더 | `~/OpenSTEM` |
 | `OPENSTEM_INPUT_DIR` | 자료 폴더(read_document가 여는 곳) | `<결과물 폴더>/자료` |
 | `OPENSTEM_TIMEOUT` | 외부 입력 처리 시간 제한(초) | 20 |
+| `OPENSTEM_RECORD` | `0`이면 재현 기록(`<stem>.json`·원본 파일)을 남기지 않는다 | 켬 |
 | `OPENSTEM_WORKER_MEMORY_MB` | 파이썬 작업자 메모리 상한(MB, POSIX). 0이면 끔 | 3072 |
 | `OPENSTEM_TECTONIC` | tectonic 실행 파일 경로 | PATH → 캐시 폴더 |
 | `OPENSTEM_NO_DOWNLOAD` | `1`이면 tectonic 자동 설치를 하지 않는다 | 꺼짐 |

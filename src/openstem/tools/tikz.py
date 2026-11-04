@@ -62,6 +62,7 @@ HANGUL_EXTRA_TIMEOUT = 20.0
 DESCRIPTION = r"""Compile TikZ/circuitikz/pgfplots/chemfig code into a figure (SVG, PDF, PNG) and return a preview image. For circuits, free-body diagrams, vectors, geometry, block diagrams. Adapt a similar example from get_template first.
 Example: {"code": "\\begin{circuitikz}\\draw (0,0) to[R, l=$R$] (2,0);\\end{circuitikz}"}
 Bare \\draw commands are wrapped; packages, libraries and Korean labels are mostly automatic. Check the preview for missing parts, wrong connections, overlaps, arrow directions.
+Saves your code as source_path (.tex) and a record_path (.json); to edit the figure later, read source_path and call again.
 On failure: errors give the TeX cause (`!` line) and `l.N` = line N of your code; fix it and call again."""
 
 MAX_CODE = 20_000
@@ -308,5 +309,15 @@ def render_tikz(
     warnings = doc.warnings + result.warnings + converted.warnings
     if warnings:
         data["warnings"] = warnings
+    output.save_record(
+        data,
+        stem,
+        "render_tikz",
+        inputs={"code": code, "packages": packages, "tikz_libraries": tikz_libraries, "name": name},
+        results={"size_cm": data["size_cm"]},
+        versions={"tectonic": output.tectonic_version()},
+        # 사용자가 보낸 code가 원본이다. 서버가 감싸 실제로 컴파일한 문서는 .full.tex.
+        sources={".tex": code.replace("\r\n", "\n").strip("\n") + "\n", ".full.tex": doc.source},
+    )
     data["check"] = "Look at the preview: check for missing parts, connections, overlapping labels, directions."
     return ToolResult(ok=True, data=data, preview_png=converted.preview_png)

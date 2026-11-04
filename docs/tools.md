@@ -15,11 +15,13 @@
 | `read_document` | 자료 폴더의 PDF·HWP·HWPX·Office·텍스트·그림 읽기 | M5 |
 | `lms` | 학교 LMS 읽기 전용 연결 → [lms.md](lms.md) | M6 |
 
+재현 기록: 결과물을 만드는 툴(render_tikz, render_molecule, plot_function, plot_data, export_document)은 결과물 옆에 `<stem>.json`을 남기고 결과에 `record_path`를 싣는다. 원본 파일이 따로 있는 툴은 `source_path`도 싣는다. 내용과 끄는 법은 [ARCHITECTURE.md](ARCHITECTURE.md#결과물-저장).
+
 ## render_tikz
 
 - 입력: `code`(tikzpicture 환경 또는 standalone 문서 전체), `packages`(허용 목록: tikz, circuitikz, pgfplots, chemfig, siunitx, amsmath, amssymb), `tikz_libraries`(예: arrows.meta, calc, positioning), `name`(선택)
 - 처리: standalone 문서로 감싸기 → `texcheck` 검사 → tectonic 컴파일(shell-escape 끔) → PDF → SVG + PNG(200 dpi)
-- 반환: `ok`, `svg_path`, `pdf_path`, `png_path`, `size_cm`, 미리보기 이미지. 실패하면 `errors`(로그의 `!` 줄과 `l.<번호>` 줄만, 사용자 code 기준 줄 번호)
+- 반환: `ok`, `svg_path`, `pdf_path`, `png_path`, `size_cm`, `source_path`(사용자가 보낸 `code` 그대로인 `<stem>.tex`. 서버가 감싸 컴파일한 전체 문서는 `<stem>.full.tex`), `record_path`(재현 기록 `<stem>.json`), 미리보기 이미지. 실패하면 `errors`(로그의 `!` 줄과 `l.<번호>` 줄만, 사용자 code 기준 줄 번호)
 - 허용 목록 밖 패키지는 컴파일 전에 거절하고 허용 목록을 알려 준다. LLM이 습관처럼 넣는 패키지(xcolor, graphicx, inputenc, fontenc, kotex, xetexko, fontspec)는 왜 필요 없는지 알려 준다.
 - 라이브러리 `external`은 금지다(파일을 쓰고 외부 명령을 부른다).
 - 자동 감지, 한글, 타임아웃, 줄 번호 규칙은 [ARCHITECTURE.md](ARCHITECTURE.md#latex-렌더링).
@@ -34,14 +36,14 @@
 
 - 입력: `smiles`(반응식은 `반응물>>생성물`), `kind`(molecule | reaction), `legend`(선택), `show_atom_numbers`(기본 false), `name`
 - 처리: 작업자에서 RDKit 파싱·sanitize → SVG → pymupdf로 PDF 한 쪽(범례 포함) → 변환 작업자로 SVG·PNG
-- 반환: 경로, 미리보기, 분자식·분자량(LLM이 맞는 분자인지 스스로 확인하는 용도). 반응식은 원소 균형 여부를 알린다. 실패하면 어느 원자에서 깨졌는지 보인다.
+- 반환: 경로, 미리보기, 분자식·분자량(LLM이 맞는 분자인지 스스로 확인하는 용도), `record_path`(입력 SMILES와 분자식·분자량·정규 SMILES, RDKit 버전). 원본 파일은 따로 없다(SMILES가 기록의 `inputs`에 있다). 반응식은 원소 균형 여부를 알린다. 실패하면 어느 원자에서 깨졌는지 보인다.
 - **좌표**: CoordGen을 먼저 쓴다. RDKit 2026.09에서 수소만 있는 분자(`[H][H]`, `[H+]`, `[2H][2H]`)는 CoordGen 좌표가 NaN이라, 그러면 그 요청 동안 RDKit 기본 좌표 생성기로 바꾼다. 반응식 템플릿에는 좌표를 넣지 않는다(좌표가 있는 `[H][H]` 템플릿은 DrawReaction이 NaN으로 그린다).
 
 ## plot_function
 
 - 입력: `series`([{expr: "sin(x)*exp(-x/5)", label?}]), `x_range`, `y_range?`, `title?`, `x_label?`, `y_label?`, `points?`([{x: [], y: [], label?}])
 - 처리: 작업자에서 sympy 파싱 → lambdify → matplotlib. 코드 문자열을 실행하는 방식이 아니다. `x_range`·`y_range`는 `"2*pi"` 같은 상수식 문자열도 받는다(서버는 `mathexpr.check(s, ())`, 변환은 작업자).
-- 반환: svg·png·pdf 경로, 미리보기, 특이점·정의역 밖 구간 경고
+- 반환: svg·png·pdf 경로, 미리보기, 특이점·정의역 밖 구간 경고, `record_path`(식·범위 등 입력 전체, `parsed` 식, 실제 축 범위, 경고, sympy·numpy·matplotlib 버전). 원본은 식 자체라 `source_path`는 없다.
 - **특이점**: sympy `singularities`(정확한 값, 4초 안에 못 끝내면 생략)로 후보를 얻고 수치로 종류를 가른다. 발산이면 선을 끊고, 0/0 같은 구멍은 이어 그리고, 양쪽 값이 다른 점프는 끊고 왼쪽→오른쪽 값을 경고한다. 그 점에서 값이 없고 다가갈수록 |f|가 줄지 않고 커지면(`log(abs(x))`, `abs(x)**(-0.2)`처럼 느린 발산) 구멍이 아니라 발산으로 본다. `sin(1/x)`처럼 끝없이 오르내리며 모이지 않으면 '진동 불연속'으로 알리고 선을 끊는다. 음수 밑의 홀수 분수 거듭제곱(`x**(1/3)`)이 그려지지 않으면 `cbrt`를 안내한다. 그 밖에 2001점 격자에서 NaN 구간(정의역 밖, 이분법으로 경계를 좁힘)·무한대·큰 값 차이(이분법으로 좁혀도 줄지 않으면 불연속)를 찾는다. 값이 발산하면 y축을 5~95% 분위수 기준으로 자동으로 자른다.
 - **PDF**: 작업자가 `plot.pdf`도 저장해 `pdf_path`를 준다. export_document가 SVG 대신 이 PDF를 쓴다(MuPDF가 SVG `clip-path`를 무시해서).
 
@@ -72,7 +74,7 @@
 
 - 입력: `series`([{x, y, yerr?, xerr?, label?, fit?}]) 또는 `table`(CSV·탭·마크다운 표 텍스트, 열 이름으로 고름), `fit`(none | linear | poly2 | poly3 | exponential | power | log), 축 이름·제목, 로그 축
 - 처리: scipy 없이 numpy `polyfit(cov=True)`로 맞춘다(오차 막대가 있으면 1/σ² 가중). 지수·거듭제곱은 로그를 씌워 직선으로 맞춘다(0 이하 데이터는 거절). 그리기는 작업자 안에서 matplotlib.
-- 반환: svg·png·pdf 경로, 미리보기, 맞춤 식(± 표준오차), R², 경고(점이 모자람, 3σ 밖 점). `fit.note`에 가중 맞춤의 표준오차가 √χ²_red로 조정된 값이라는 것과, 지수·거듭제곱 맞춤은 ln y 직선 맞춤이며 R²는 원래 y로 계산했다는 것을 적는다.
+- 반환: svg·png·pdf 경로, 미리보기, 맞춤 식(± 표준오차), R², 경고(점이 모자람, 3σ 밖 점), `source_path`(실제로 그린 데이터 `<stem>.csv`: `series,x,y,yerr,xerr` 긴 형식, 표에서 읽은 값 포함), `record_path`(입력 전체와 맞춤 계수·표준오차·R²·χ²_red). `fit.note`에 가중 맞춤의 표준오차가 √χ²_red로 조정된 값이라는 것과, 지수·거듭제곱 맞춤은 ln y 직선 맞춤이며 R²는 원래 y로 계산했다는 것을 적는다.
 - `workers/plot.py`의 비공개 도우미를 같이 쓰니 이름을 바꿀 때 함께 고친다.
 
 ## read_document
@@ -91,7 +93,7 @@
 
 - 입력: `markdown`(수식은 `$...$`, 그림은 render_*·plot_*가 돌려준 경로를 이미지 문법으로), `format`(pdf | docx | pptx), `title?`, `layout`(document | cheatsheet | exam | flashcards), `name?`
 - 처리: [ARCHITECTURE.md](ARCHITECTURE.md#문서-내보내기)의 순서대로. docx·pptx에는 SVG 대신 PNG(300 dpi)를 넣는다.
-- 반환: 파일 경로, pdf면 첫 쪽 미리보기와 `pages`, pptx면 `slides`, exam이면 `problems`·`answer_page`, flashcards면 `cards`·`tsv_path`
+- 반환: 파일 경로, pdf면 첫 쪽 미리보기와 `pages`, pptx면 `slides`, exam이면 `problems`·`answer_page`, flashcards면 `cards`·`tsv_path`, `source_path`(입력 마크다운 `<stem>.md`. 그림 경로는 결과물 폴더 기준 상대 경로로 바꿔 그대로 다시 내보낼 수 있다), `record_path`(입력·`pages`·`problems` 등 결과, 쓰인 그림, pandoc·tectonic 버전)
 - **cheatsheet**(pdf 전용): A4 두 단. `pages`가 1보다 크면 경고해서 LLM이 줄이게 한다. docx·pptx로 부르면 보통 문서로 만들고 그렇게 알린다.
 - **exam**(pdf·docx): 문제(`##`)마다 풀이 공간(기본 4 cm, `{space=N}`으로 조절, 최대 20 cm), `# 정답과 해설`(영어 문서는 `# Answers`·`# Solutions`도 됨)부터 새 쪽. 정답 제목이 없거나 둘이면 컴파일 전에 에러.
 - **flashcards**(pdf 전용): 2열 표(앞면 | 뒷면) → 오려 쓰는 카드 PDF(양면 인쇄용) + 암기 앱 가져오기용 탭 구분 텍스트(`tsv_path`, 확장자 .txt, 수식은 `\(...\)`). 2열이 아닌 표, 빈 면은 에러. 카드보다 긴 글은 줄이고 그 카드 번호를 경고한다.

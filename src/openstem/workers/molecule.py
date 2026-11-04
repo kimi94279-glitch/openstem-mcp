@@ -349,6 +349,8 @@ def handle(payload: dict[str, Any]) -> dict[str, Any]:
         svg = draw_reaction(reactants, agents, products, numbers)
 
     warn += compose_pdf(svg, legend, Path(PDF_NAME))
+    # 재현 기록용 버전(서버는 RDKit·pymupdf를 import하지 않는다)
+    result["versions"] = {"rdkit": rdBase.rdkitVersion, "pymupdf": pymupdf.__version__, "numpy": np.__version__}
     if warn:
         result["warnings"] = warn
     return result

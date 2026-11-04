@@ -24,6 +24,7 @@ STARTUP_HINT = "On a first run loading the libraries can be slow; try once more.
 DESCRIPTION = r"""Plot y = f(x) (SVG, PNG, PDF) with a preview; asymptotes, jumps and domain gaps come back as warnings. Measured data: use plot_data.
 Example: {"series": [{"expr": "sin(x)*exp(-x/5)"}], "x_range": [0, "4*pi"]}
 expr: sympy syntax in x (x**2, sqrt(x), exp(x), log(x)=ln, abs(x), pi, e). Check series[].parsed. Labels may use $...$.
+The call is saved in record_path (.json: inputs, parsed series, warnings); to redo or edit the plot later, read record_path.
 On failure: errors name the series and character; fix it and call again."""
 
 
@@ -149,5 +150,13 @@ def plot_function(
     }
     if result.get("warnings"):
         data["warnings"] = result["warnings"]
+    output.save_record(
+        data,
+        stem,
+        "plot_function",
+        inputs={"series": series, "x_range": x_range, "y_range": y_range, "points": points, **texts, "name": name},
+        results={"series": result["series"], "x_range": result["x_range"], "y_range": result["y_range"]},
+        versions=result.get("versions"),
+    )
     data["check"] = "Check the preview and series[].parsed: are expressions, ranges and labels as intended?"
     return ToolResult(ok=True, data=data, preview_png=png_path.read_bytes())
