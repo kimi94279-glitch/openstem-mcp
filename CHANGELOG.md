@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+### 추가
+
+- 재현 기록: render_tikz·export_document·plot_data·plot_function·render_molecule이 결과물 옆에 `<stem>.json`(툴, openstem·의존성 버전, 만든 시각, 입력 전체, 같은 이름의 파일들, 맞춤 계수·표준오차·R²·분자식·분자량·특이점 경고·시험지 문제 같은 결과)을 남긴다. 원본도 함께 저장한다: TikZ 코드는 `<stem>.tex`(서버가 감싼 전체 문서는 `<stem>.full.tex`), 마크다운은 `<stem>.md`(그림 경로는 결과물 폴더 기준 상대 경로), 그래프에 쓰인 데이터는 `<stem>.csv`. 툴 결과에 `source_path`·`record_path`를 싣고, 기록에는 이 PC의 경로를 남기지 않는다. `OPENSTEM_RECORD=0`이면 끈다. 저장에 실패해도 툴은 성공하고 경고 한 줄만 더한다.
+
 ## [0.3.3] - 2026-11-04
 
 2026-11-03 기술·보안 감사에서 나온 문제를 고친 릴리스다.
