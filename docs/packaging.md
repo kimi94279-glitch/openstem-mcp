@@ -13,7 +13,12 @@ openstem-mcp가 사용자에게 가는 길, 릴리스 절차, 버전을 올릴 �
 
 ## 릴리스 절차
 
-GitHub에서 릴리스를 만들기 전에 아래 [릴리스 전 점검(10분)](#릴리스-전-점검10분)을 한다. 릴리스를 만들면 `.github/workflows/publish.yml`이 다음 순서로 돈다.
+GitHub에서 릴리스를 만들기 전에 아래 [릴리스 전 점검(10분)](#릴리스-전-점검10분)을 한다. 릴리스를 시작하는 방법은 둘이다.
+
+- GitHub 화면에서 릴리스를 게시한다(태그 `v<버전>`, 대상 `main`).
+- Actions → Publish → **Run workflow**에 버전(예: `0.3.3`)을 넣는다. 워크플로가 버전을 확인하고 `.github/release-notes/v<버전>.md`를 본문으로 `v<버전>` 태그와 릴리스를 만든 뒤 이어서 배포한다. 태그를 올릴 수 없는 환경(자동화 도구 등)에서 쓴다.
+
+어느 쪽이든 `.github/workflows/publish.yml`이 다음 순서로 돈다.
 
 0. **test**: `ci.yml`을 그대로 불러 ubuntu·windows·macos × Python 3.11·3.14에서 `uv sync --locked --all-extras` → `openstem-mcp --warmup` → `pytest`(`OPENSTEM_REQUIRE_TEX=1`, tectonic이 없으면 건너뛰지 않고 실패). 하나라도 실패하면 아래 작업은 돌지 않는다.
 1. **publish**: `uv build` → `uv publish --trusted-publishing always`(PyPI 신뢰할 수 있는 게시, 토큰 없음). PyPI 쪽 설정(pending publisher)은 관리자가 pypi.org에서 한 번 한다: 프로젝트 `openstem-mcp`, 워크플로 `publish.yml`, 환경 `pypi`.
