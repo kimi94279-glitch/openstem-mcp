@@ -29,6 +29,10 @@ openstem-mcp는 사용자 PC에서 돌며, AI(MCP 호스트)가 보낸 입력과
 
 - 임의 코드를 실행하는 툴이 없다. 서버는 LLM을 부르지 않는다.
 - 외부 입력은 별도 프로세스에서 시간 제한(기본 20초)을 두고 처리한다([결정 0003](docs/decisions/0003-worker-processes.md)).
+- **운영체제 수준 격리**(`OPENSTEM_ISOLATION=auto|off|require`, 기본 auto, [결정 0014](docs/decisions/0014-os-isolation.md)): 입력 검사를 빠져나간 우회가 있어도 사용자 파일에 닿지 못하게 하는 두 번째 벽이다. tectonic과 파이썬 작업자를 샌드박스 안에서 돌린다.
+  - Linux: bubblewrap(`bwrap`). 시스템·파이썬·tectonic만 읽기 전용으로 보이고, 홈 폴더는 보이지 않으며(tectonic 번들 캐시만 예외), 쓰기는 작업 임시 폴더만 된다. 파이썬 작업자는 네트워크도 끊는다. 입력 파일(read_document의 대상, 변환할 PDF·SVG)은 서버가 작업자 폴더로 복사해 넘긴다.
+  - macOS: `sandbox-exec` 프로필. 파일 읽기는 시스템·파이썬·캐시·작업 폴더만, 쓰기는 작업 폴더만, 작업자는 네트워크 거부.
+  - auto는 쓸 수 없으면(bwrap 미설치, Ubuntu 24.04 AppArmor 같은 사용자 네임스페이스 제한, 이미 샌드박스에 든 앱) 격리 없이 돌고 서버 로그와 `openstem-mcp --doctor`에 한 줄을 남긴다. require는 그때 툴이 에러를 돌려준다.
 - 작업자·tectonic·pandoc에는 서버의 비밀 환경변수를 물려주지 않는다: `OPENSTEM_LMS_*`와 이름에 TOKEN·SECRET·PASSWORD·PASSWD·API_KEY·ACCESS_KEY·CREDENTIAL·PRIVATE_KEY가 든 변수를 뺀다(`sandbox.child_env`). 프록시·인증서·캐시 폴더 변수는 남긴다.
 - Linux와 Windows에서는 파이썬 작업자의 메모리에 상한을 둔다(기본 3072 MB, `OPENSTEM_WORKER_MEMORY_MB`, 0이면 끔). Linux는 주소 공간(`RLIMIT_AS`), Windows는 작업자를 Job Object에 넣어 프로세스별 커밋 메모리를 막는다(서버가 끝나면 작업자도 함께 끝난다). 넘으면 "too large to compute" 에러로 돌아온다.
 - 수식 문자열은 허용한 토큰만 sympy에 넘긴다(속성 접근·밑줄 이름·문자열은 eval까지 가지 못한다).
@@ -41,7 +45,12 @@ openstem-mcp는 사용자 PC에서 돌며, AI(MCP 호스트)가 보낸 입력과
 
 ## 알려진 한계
 
-- **운영체제 수준의 격리가 없다.** 작업자 프로세스와 tectonic·pandoc은 서버와 같은 사용자 권한으로 돈다(비밀 환경변수만 뺀다). 파일 시스템·네트워크 접근을 운영체제가 막지 않는다.
+- **운영체제 수준 격리는 Linux·macOS의 tectonic과 파이썬 작업자에만 있다.**
+  - Windows에는 아직 없다(AppContainer·제한 토큰은 다음 단계). Windows의 작업자·tectonic·pandoc은 서버와 같은 사용자 권한으로 돌고(비밀 환경변수만 뺀다) 파일 시스템·네트워크 접근을 운영체제가 막지 않는다. `OPENSTEM_ISOLATION=require`로 두면 Windows에서는 툴이 에러를 돌려준다.
+  - Linux에서 bwrap이 없거나 사용자 네임스페이스를 쓸 수 없으면, macOS에서 `sandbox-exec`가 실패하면(앱 자체가 샌드박스에 든 경우 등) auto는 격리 없이 돈다. `--doctor`의 "운영체제 격리" 줄로 확인한다.
+  - pandoc(export_document의 변환)은 격리하지 않는다.
+  - tectonic은 TeX 번들을 받으려고 네트워크가 열려 있고 번들 캐시에 쓸 수 있다. 격리 안에서 보이는 것(시스템 파일, 작업 폴더, 번들 캐시)은 밖으로 보낼 수 있고, 캐시를 오염시킬 수 있다. 홈 폴더의 사용자 파일은 보이지 않는다.
+  - macOS 프로필은 파일 정보(이름·크기·시각)를 막지 않는다(내용은 막는다). `sandbox-exec`는 Apple이 사용 중단으로 표시한 도구다.
 - **macOS에는 메모리 상한이 사실상 없다.** Linux는 `RLIMIT_AS`, Windows는 Job Object로 상한을 건다. macOS는 `RLIMIT_AS`를 사실상 지키지 않아 시간 제한(기본 20초)이 끝날 때까지 작업자가 메모리를 키울 수 있다. Windows에서 Job Object를 만들거나 작업자를 넣지 못하면(중첩 job을 못 쓰는 구버전 등) 경고 로그 한 줄을 남기고 상한 없이 돈다(`openstem-mcp --doctor`의 작업자 항목에 적용 여부가 나온다). 작업자가 Job Object에 들어가기 전, 프로세스가 막 뜬 짧은 순간에는 상한이 없다. 상한은 파이썬 작업자에만 걸고 tectonic·pandoc에는 걸지 않는다. 상한 안이라도 20초 동안 1 GB 넘게 키우는 입력(예: `2^2^2^2^2^2`)은 시간 제한으로 끊긴다.
 - **TeX 검사는 알려진 위험 문법을 막는 방식이다.** tectonic `--untrusted`는 TeX의 파일 읽기·쓰기(절대 경로 읽기, `../` 쓰기 포함)를 막지 않으므로, 패키지 매크로가 파일을 여는 길을 검사가 빠짐없이 막았다고 보장하지 못한다. TikZ 경로는 매크로를 펼쳐 읽어서 `plot` 같은 낱말을 매크로로 나눠 쓸 수 있고, 이것은 토큰 검사가 아니라 `FILE_GUARD`가 막는다. export_document의 LaTeX 머리말에도 같은 `FILE_GUARD`를 넣는다.
 - **툴 결과는 AI에게 간다.** 자료 파일과 LMS 글에 들어 있는 지시를 AI가 따를 위험은 호스트 쪽 방어에 달려 있다.

@@ -207,6 +207,19 @@ def _memory_limit_text() -> str:
     return f"{mb} MB({how})"
 
 
+def check_isolation() -> Check:
+    """운영체제 격리(OPENSTEM_ISOLATION) 상태 한 줄."""
+    from openstem import isolation
+
+    m, st = isolation.mode(), isolation.status()
+    if m == "off":
+        return Check("isolation", "운영체제 격리", SKIP, isolation.describe(), "격리를 켜려면 OPENSTEM_ISOLATION을 지우거나 auto로 두세요.")
+    if st.active:
+        return Check("isolation", "운영체제 격리", OK, isolation.describe())
+    hint = "Linux는 bubblewrap(bwrap)을 설치하세요. Windows는 아직 지원하지 않습니다(SECURITY.md)."
+    return Check("isolation", "운영체제 격리", FAIL if m == "require" else WARN, isolation.describe(), hint)
+
+
 def check_lms() -> Check:
     from openstem.lms import client
 
@@ -247,6 +260,7 @@ def run_checks(workers: Sequence[str], *, offline: bool = False) -> list[Check]:
         check_output_folder,
         check_materials_folder,
         lambda: check_workers(workers),
+        check_isolation,
         check_lms,
         check_http_secret,
         check_env,
