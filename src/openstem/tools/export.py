@@ -120,6 +120,7 @@ FLASHCARDS_EXAMPLE = "## Kinematics\\n\\n| Front | Back |\\n|---|---|\\n| Displa
 DESCRIPTION = r"""Save markdown (math $...$, images ![caption](path from render_*/plot_*), tables) as pdf, docx or pptx; pdf returns a first-page preview.
 Example: {"markdown": "## Summary\n$t=\\sqrt{2h/g}$", "format": "pdf", "title": "Mechanics"}
 pptx: each ## heading is a slide. layout: cheatsheet (one A4 page, pdf), exam (## problems, then a `# 정답과 해설` or `# Answers` heading), flashcards (2-column table, pdf).
+The markdown is saved as source_path (.md, image paths relative to the output folder) with a record_path (.json); to revise later, read source_path and export again.
 On failure: follow errors; for TeX errors fix the math shown in the `!` line."""
 
 
@@ -655,6 +656,17 @@ def export_document(
     warnings += pandoc_warnings
     if warnings:
         data["warnings"] = warnings[:10]
+    result_keys = ("format", "layout", "pages", "slides", "answer_page", "problems", "cards")
+    output.save_record(
+        data,
+        stem,
+        "export_document",
+        inputs={"markdown": markdown, "format": format, "title": title, "layout": layout, "name": name},
+        results={**{k: data[k] for k in result_keys if k in data}, "images": [str(src) for _node, src in images]},
+        versions={"pandoc": output.pandoc_version(), **({"tectonic": output.tectonic_version()} if format == "pdf" else {})},
+        # 이미지 경로는 결과물 폴더 기준 상대 경로로 바꿔 둔다(그대로 export_document에 다시 넘길 수 있다).
+        sources={".md": output.portable(markdown)},
+    )
     data["check"] = _check_text(format, layout, data)
     return ToolResult(ok=True, data=data, preview_png=preview)
 

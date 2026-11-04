@@ -31,6 +31,7 @@ OUTLIER_SIGMA = 3.0
 SVG_NAME = "data.svg"
 PNG_NAME = "data.png"
 PDF_NAME = "data.pdf"
+CSV_NAME = "data.csv"
 OUTLIER_LABEL = "3σ 밖"
 
 
@@ -623,10 +624,33 @@ def handle(payload: dict[str, Any]) -> dict[str, Any]:
         if s.fitted:
             item["fit"] = s.fitted
         summary.append(item)
-    result: dict[str, Any] = {"ok": True, **files, "series": summary}
+    result: dict[str, Any] = {"ok": True, **files, "series": summary, "versions": _versions()}
+    result["csv"] = write_csv(series, CSV_NAME)
     if warn:
         result["warnings"] = warn[:10]
     return result
+
+
+def write_csv(series: list[Series], name: str) -> str:
+    """쓰인 데이터(표에서 읽은 값 포함)를 긴 형식 CSV로 남긴다: series, x, y, yerr, xerr. 재현 기록의 원본이다."""
+    with open(name, "w", encoding="utf-8", newline="") as f:
+        writer = csv.writer(f, lineterminator="\n")
+        writer.writerow(["series", "x", "y", "yerr", "xerr"])
+        for s in series:
+            label = s.label or s.column or s.name
+            for i in range(len(s.x)):
+                row = [label, repr(float(s.x[i])), repr(float(s.y[i]))]
+                for err in (s.yerr, s.xerr):
+                    row.append("" if err is None else repr(float(np.broadcast_to(err, s.x.shape)[i])))
+                writer.writerow(row)
+    return name
+
+
+def _versions() -> dict[str, str]:
+    """재현 기록용 라이브러리 버전. 서버는 이 라이브러리들을 import하지 않으므로 작업자가 알려 준다."""
+    import matplotlib
+
+    return {"numpy": np.__version__, "matplotlib": matplotlib.__version__}
 
 
 def _preload() -> None:

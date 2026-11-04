@@ -22,6 +22,7 @@ STARTUP_HINT = "On a first run loading the libraries can be slow; try once more.
 DESCRIPTION = r"""Draw a molecule or reaction from SMILES (not a name): SVG/PDF/PNG, preview, formula, molecular weight. Reaction: reactants>>products.
 Example: {"smiles": "CC(=O)Oc1ccccc1C(=O)O", "legend": "aspirin"}
 Check that formula and mol_weight match the intended molecule.
+The call and results are saved in record_path (.json); to redo or edit the drawing later, read record_path.
 On failure: errors point at the atom (#index, ^); fix the SMILES there and call again."""
 
 
@@ -75,9 +76,18 @@ def render_molecule(
         "pdf_path": str(pdf_path),
         "png_path": str(converted.png_path),
     }
-    data.update({k: v for k, v in result.items() if k not in ("ok", "pdf", "warnings")})
+    described = {k: v for k, v in result.items() if k not in ("ok", "pdf", "warnings", "versions")}
+    data.update(described)
     warnings = result.get("warnings", []) + converted.warnings
     if warnings:
         data["warnings"] = warnings
+    output.save_record(
+        data,
+        stem,
+        "render_molecule",
+        inputs={"smiles": smiles, "kind": kind, "legend": legend, "show_atom_numbers": show_atom_numbers, "name": name},
+        results=described,  # 분자식·분자량·정규 SMILES(반응이면 분자별, balanced)
+        versions=result.get("versions"),
+    )
     data["check"] = "Check that formula, mol_weight and the preview match the intended molecule."
     return ToolResult(ok=True, data=data, preview_png=converted.preview_png)

@@ -614,10 +614,19 @@ def handle(payload: dict[str, Any]) -> dict[str, Any]:
         "ok": True,
         "series": [{"expr": item["expr"], "parsed": str(s.expr)} for item, s in zip(payload["series"], series, strict=True)],
         **drawn,
+        "versions": _versions(),
     }
     if warn:
         result["warnings"] = warn[:10]
     return result
+
+
+def _versions() -> dict[str, str]:
+    """재현 기록용 라이브러리 버전. 서버는 이 라이브러리들을 import하지 않으므로 작업자가 알려 준다."""
+    import matplotlib
+    import sympy
+
+    return {"sympy": sympy.__version__, "numpy": np.__version__, "matplotlib": matplotlib.__version__}
 
 
 def _preload() -> None:
