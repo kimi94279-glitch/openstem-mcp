@@ -8,6 +8,11 @@
    (render/*.lua)가 만들고, 서버는 필터가 쓸 표시(클래스)만 붙인다.
 4. 그림을 작업 폴더로 옮겨(형식 변환은 작업자에서) 구조의 경로를 바꾼 뒤, 그 구조를 docx·pptx나 LaTeX로 바꾼다.
 5. PDF는 render_tikz와 같은 latex.compile_tex(tectonic --untrusted, 타임아웃, 에러 줄 추출)로 만든다.
+
+참고문헌(bibliography): 자료·결과물 폴더 안의 .bib·.json(CSL JSON)·.yaml 파일을 서버가 검사해 작업 폴더로 복사하고,
+1단계 pandoc(--sandbox)이 --citeproc으로 인용과 참고문헌 목록을 구조 안에 넣는다. 그 뒤 2단계 검사(수식·그림)를
+참고문헌에도 똑같이 거친다. 서식 파일(CSL)은 render/csl/에 넣어 둔 것만 쓴다(사용자 CSL은 받지 않는다).
+docx·pptx 기본 서식은 render/reference.docx·reference.pptx(render/refdocs.py가 만든다)이고 template 인자로 바꾼다.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from urllib.parse import unquote
 
 from openstem import output, sandbox, texcheck
 from openstem.render import latex, pages
-from openstem.tools import ToolResult
+from openstem.tools import ToolResult, documents
 from openstem.tools.tikz import FILE_GUARD, HANGUL_SETUP, hangul_to_text
 
 FORMATS = ("pdf", "docx", "pptx")
@@ -45,6 +50,19 @@ RENDER_DIR = Path(__file__).resolve().parents[1] / "render"
 TABULAR_FILTER = RENDER_DIR / "tabular.lua"
 EXAM_FILTER = RENDER_DIR / "exam.lua"
 FLASHCARDS_FILTER = RENDER_DIR / "flashcards.lua"
+
+# 참고문헌·서식 파일. chicago는 pandoc에 든 기본 서식(Chicago author-date)이라 파일이 없다.
+CSL_DIR = RENDER_DIR / "csl"
+CITATION_STYLES = ("chicago", "apa", "ieee", "mla")
+BIBLIOGRAPHY_EXTS = (".bib", ".json", ".yaml", ".yml")
+MAX_BIBLIOGRAPHY_BYTES = 2_000_000
+REFERENCE_DOCS = {"docx": RENDER_DIR / "reference.docx", "pptx": RENDER_DIR / "reference.pptx"}
+TEMPLATE_PART = {"docx": "word/styles.xml", "pptx": "ppt/presentation.xml"}  # 진짜 Word·PowerPoint 파일인지 보는 부분
+MAX_TEMPLATE_BYTES = 30_000_000
+# 마크다운 끝에 사용자가 직접 참고문헌 제목을 썼으면 pandoc 제목을 또 넣지 않는다
+_REFS_HEADING_RE = re.compile(r"^#{1,6}[ \t]+(참고[ \t]*문헌|references|bibliography|works[ \t]+cited)[ \t]*(\{[^}\n]*\})?[ \t]*$", re.I | re.M)
+_MISSING_CITE_RE = re.compile(r"Citeproc: citation (\S+) not found")
+_BIB_META = ("bibliography", "csl", "lang", "reference-section-title", "references", "nocite", "citation-style")
 
 _HANGUL_RE = re.compile(r"[\u1100-\u11ff\u3130-\u318f\uac00-\ud7a3]")
 _URL_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.\-]*:(?://|[^\\/])")  # http:, file:, data: 등(C:\ 같은 드라이브는 아님)
@@ -120,6 +138,8 @@ FLASHCARDS_EXAMPLE = "## Kinematics\\n\\n| Front | Back |\\n|---|---|\\n| Displa
 DESCRIPTION = r"""Save markdown (math $...$, images ![caption](path from render_*/plot_*), tables) as pdf, docx or pptx; pdf returns a first-page preview.
 Example: {"markdown": "## Summary\n$t=\\sqrt{2h/g}$", "format": "pdf", "title": "Mechanics"}
 pptx: each ## heading is a slide. layout: cheatsheet (one A4 page, pdf), exam (## problems, then a `# 정답과 해설` or `# Answers` heading), flashcards (2-column table, pdf).
+Citations: bibliography = a .bib, CSL .json or .yaml file in the materials folder; cite as [@key], [@key, p. 3] or @key. A reference list is added at the end. citation_style: chicago (default, author-date), apa, ieee, mla.
+docx/pptx use a clean built-in style (Malgun Gothic, 16:9 slides); template = a .docx/.pptx in the materials folder to use its styles instead.
 The markdown is saved as source_path (.md, image paths relative to the output folder) with a record_path (.json); to revise later, read source_path and export again.
 On failure: follow errors; for TeX errors fix the math shown in the `!` line."""
 
@@ -491,14 +511,137 @@ def _pandoc(args: list[str], workdir: Path) -> tuple[list[str], list[str]]:
     return [], warnings
 
 
-def parse_markdown(markdown: str, workdir: Path) -> dict[str, Any]:
+def parse_markdown(markdown: str, workdir: Path, citeproc: list[str] | None = None) -> dict[str, Any]:
     """마크다운을 pandoc 문서 구조(JSON)로 읽는다. 이 단계의 pandoc은 --sandbox로 파일을 더 읽지 않는다."""
+    return _parse(markdown, workdir, citeproc)[0]
+
+
+def _parse(markdown: str, workdir: Path, citeproc: list[str] | None) -> tuple[dict[str, Any], list[str]]:
+    """parse_markdown + pandoc 경고. citeproc 인자가 있으면 같은 --sandbox 단계에서 인용을 처리한다
+    (--sandbox는 명령줄에 준 파일만 읽게 하고 네트워크를 막는다. 참고문헌·CSL은 작업 폴더에 복사해 둔 것이다)."""
     fixed = _SPACED_IMAGE_RE.sub(lambda m: f"![{m.group(1)}](<{m.group(2).strip()}>)", markdown)
     (workdir / "input.md").write_text(fixed, encoding="utf-8")
-    errors, _ = _pandoc(["input.md", "-f", MARKDOWN_FORMAT, "-t", "json", "-o", "ast.json", "--sandbox"], workdir)
+    args = ["input.md", "-f", MARKDOWN_FORMAT, "-t", "json", "-o", "ast.json", "--sandbox", *(citeproc or [])]
+    errors, warnings = _pandoc(args, workdir)
     if errors:
         raise InputError(errors)
-    return json.loads((workdir / "ast.json").read_text(encoding="utf-8"))
+    return json.loads((workdir / "ast.json").read_text(encoding="utf-8")), warnings
+
+
+# ── 참고문헌·서식 ───────────────────────────────────────────────────
+
+
+def _materials_file(raw: str, what: str, exts: tuple[str, ...], max_bytes: int) -> Path:
+    """자료·결과물 폴더 안의 파일(read_document와 같은 제한). 확장자·크기도 본다."""
+    try:
+        path = documents.resolve(raw)
+    except ValueError:
+        raise InputError([f"{what} must be a file inside the materials folder ({documents.input_dir()}): {raw[:200]}"]) from None
+    if path.suffix.lower() not in exts:
+        raise InputError([f"{what} must be a {'/'.join(exts)} file: {raw[:200]}"])
+    if not path.is_file():
+        raise InputError([f"{what} file not found: {raw[:200]}. Check the name with read_document (no path lists the folder)."])
+    if path.stat().st_size > max_bytes:
+        raise InputError([f"{what} file is too large (max {max_bytes // 1_000_000} MB): {raw[:200]}"])
+    return path
+
+
+def validate_extras(fmt: str, layout: str, bibliography: str | None, citation_style: str, template: str | None) -> list[str]:
+    errors = []
+    if citation_style not in CITATION_STYLES:
+        errors.append(f"citation_style must be one of: {', '.join(CITATION_STYLES)}.")
+    if bibliography and layout == "flashcards":
+        errors.append("bibliography does not work with layout=flashcards (cards have no reference list).")
+    if template and fmt not in REFERENCE_DOCS:
+        errors.append("template works only with format docx or pptx (pdf has a fixed layout).")
+    return errors
+
+
+def citeproc_args(bibliography: str, citation_style: str, markdown: str, hangul: bool, workdir: Path) -> list[str]:
+    """참고문헌 파일을 검사해 작업 폴더로 복사하고 1단계 pandoc에 줄 인자를 돌려준다."""
+    src = _materials_file(bibliography, "bibliography", BIBLIOGRAPHY_EXTS, MAX_BIBLIOGRAPHY_BYTES)
+    ext = ".yaml" if src.suffix.lower() == ".yml" else src.suffix.lower()
+    shutil.copyfile(src, workdir / f"refs{ext}")
+    args = ["--citeproc", f"--bibliography=refs{ext}"]
+    if citation_style != "chicago":
+        shutil.copyfile(CSL_DIR / f"{citation_style}.csl", workdir / "style.csl")
+        args.append("--csl=style.csl")
+    # lang=ko-KR은 넣지 않는다: CSL 한국어 낱말이 영어 문헌에도 "Lee 와/과 Park 2019 년"처럼 붙어 어색하다.
+    # 한국어 문서에서는 목록 제목만 "참고문헌"으로 둔다.
+    if not _REFS_HEADING_RE.search(markdown):
+        args.append(f"--metadata=reference-section-title:{'참고문헌' if hangul else 'References'}")
+    return args
+
+
+def _plain(node: dict[str, Any]) -> int:
+    """참고문헌·인용 안의 raw TeX/HTML(.bib의 모르는 \\명령 등)을 글자로 바꾼다. 바꾼 수."""
+    count = 0
+
+    def visit(n: dict[str, Any]) -> None:
+        nonlocal count
+        if n["t"] == "RawInline":
+            n["t"], n["c"] = "Str", n["c"][1]
+            count += 1
+        elif n["t"] == "RawBlock":
+            n["t"], n["c"] = "Plain", [{"t": "Str", "c": n["c"][1]}]
+            count += 1
+
+    _walk(node, visit)
+    return count
+
+
+def finish_citations(ast: dict[str, Any], fmt: str, cited: bool, pandoc_warnings: list[str]) -> tuple[list[str], dict[str, Any]]:
+    """citeproc이 만든 구조를 정리한다. (warnings, {"references", "citations"})."""
+    for key in _BIB_META:
+        ast.get("meta", {}).pop(key, None)  # 2단계(LaTeX의 lang → polyglossia 등)에 넘기지 않는다
+    cites: list[dict[str, Any]] = []
+    refs: list[dict[str, Any]] = []
+
+    def visit(n: dict[str, Any]) -> None:
+        if n["t"] == "Cite":
+            cites.append(n)
+        elif n["t"] == "Div" and n["c"][0][0] == "refs":
+            refs.append(n)
+
+    _walk(ast, visit)
+    warnings: list[str] = []
+    if not cited:
+        if cites:
+            warnings.append("Found citations like [@key] but no bibliography, so they are printed as typed. Pass bibliography=<.bib/.json/.yaml in the materials folder>.")
+        return warnings, {}
+    raw = sum(_plain(n) for n in [*cites, *refs])
+    if fmt == "pptx":
+        for block in ast["blocks"]:
+            if block["t"] == "Header" and block["c"][1][0] == "bibliography":
+                block["c"][0] = 2  # pandoc은 # 제목을 넣는다. pptx에서는 ## 제목이어야 슬라이드 한 장이 된다
+    missing = list(dict.fromkeys(m.group(1) for w in pandoc_warnings if (m := _MISSING_CITE_RE.search(w))))
+    if missing:
+        warnings.append(
+            f"Citation keys not in the bibliography: {', '.join(missing[:10])}. They show as bold 'key?' in the document; "
+            "use keys from the bibliography file (read it with read_document) and export again."
+        )
+    if not cites:
+        warnings.append("bibliography was given but the markdown has no citations, so no reference list was added. Cite as [@key].")
+    if raw:
+        warnings.append(f"{raw} unsupported TeX/HTML command(s) in the bibliography were printed as plain text.")
+    entries = sum(len(r["c"][1]) for r in refs)
+    return warnings, {"references": entries, "citations": len(cites)}
+
+
+def template_args(fmt: str, template: str | None, workdir: Path) -> list[str]:
+    """docx·pptx 서식 파일(사용자 template 또는 기본)을 작업 폴더에 두고 pandoc 인자를 돌려준다."""
+    name = f"ref.{fmt}"
+    if template:
+        src = _materials_file(template, "template", (f".{fmt}",), MAX_TEMPLATE_BYTES)
+        try:
+            with zipfile.ZipFile(src) as z:
+                z.getinfo(TEMPLATE_PART[fmt])
+        except (zipfile.BadZipFile, KeyError, OSError):
+            raise InputError([f"template is not a valid {fmt} file: {template[:200]}. Save it again from Word/PowerPoint."]) from None
+    else:
+        src = REFERENCE_DOCS[fmt]
+    shutil.copyfile(src, workdir / name)
+    return [f"--reference-doc={name}"]
 
 
 def _write_ast(ast: dict[str, Any], workdir: Path) -> list[str]:
@@ -571,8 +714,11 @@ def export_document(
     title: str | None = None,
     layout: str = "document",
     name: str | None = None,
+    bibliography: str | None = None,
+    citation_style: str = "chicago",
+    template: str | None = None,
 ) -> ToolResult:
-    if errors := validate(markdown, format, title, layout):
+    if errors := validate(markdown, format, title, layout) + validate_extras(format, layout, bibliography, citation_style, template):
         return ToolResult.failure(errors, INPUT_HINT)
 
     warnings: list[str] = []
@@ -583,10 +729,16 @@ def export_document(
     if layout != "document":
         data["layout"] = layout
     preview: bytes | None = None
+    hangul = layout in ("exam", "flashcards") or bool(_HANGUL_RE.search(markdown + (title or "")))
     with tempfile.TemporaryDirectory(prefix="openstem-export-") as tmp:
         workdir = Path(tmp)
         try:
-            ast = parse_markdown(markdown, workdir)
+            citeproc = citeproc_args(bibliography, citation_style, markdown, hangul, workdir) if bibliography else None
+            ast, parse_warnings = _parse(markdown, workdir, citeproc)
+            # 참고문헌에서 온 글(수식·그림·링크)도 아래 check_ast를 똑같이 거친다
+            cite_warnings, cite_info = finish_citations(ast, format, bool(citeproc), parse_warnings)
+            warnings += cite_warnings
+            data.update(cite_info)
             errors, images = check_ast(ast, output.output_dir())
             if errors:
                 return ToolResult.failure(errors, INPUT_HINT)
@@ -603,6 +755,7 @@ def export_document(
                 args = [*_write_ast(ast, workdir), *_title_args(title), "-t", format, "-o", f"out.{format}"]
                 if format == "pptx":
                     args.append("--slide-level=2")
+                args += template_args(format, template, workdir)
                 args += _filter_args(layout, workdir)  # exam(docx)
                 errors, pandoc_warnings = _pandoc(args, workdir)
                 if errors:
@@ -612,7 +765,6 @@ def export_document(
                 if format == "pptx":
                     data["slides"] = count_slides(path)
             else:
-                hangul = layout in ("exam", "flashcards") or bool(_HANGUL_RE.search(markdown + (title or "")))
                 errors, pandoc_warnings, source = to_latex(ast, workdir, title, layout, hangul)
                 if errors:
                     return ToolResult.failure(errors, INPUT_HINT)
@@ -656,18 +808,24 @@ def export_document(
     warnings += pandoc_warnings
     if warnings:
         data["warnings"] = warnings[:10]
-    result_keys = ("format", "layout", "pages", "slides", "answer_page", "problems", "cards")
+    result_keys = ("format", "layout", "pages", "slides", "answer_page", "problems", "cards", "references", "citations")
     output.save_record(
         data,
         stem,
         "export_document",
-        inputs={"markdown": markdown, "format": format, "title": title, "layout": layout, "name": name},
+        inputs={
+            "markdown": markdown, "format": format, "title": title, "layout": layout, "name": name,
+            **({"bibliography": bibliography, "citation_style": citation_style} if bibliography else {}),
+            **({"template": template} if template else {}),
+        },
         results={**{k: data[k] for k in result_keys if k in data}, "images": [str(src) for _node, src in images]},
         versions={"pandoc": output.pandoc_version(), **({"tectonic": output.tectonic_version()} if format == "pdf" else {})},
         # 이미지 경로는 결과물 폴더 기준 상대 경로로 바꿔 둔다(그대로 export_document에 다시 넘길 수 있다).
         sources={".md": output.portable(markdown)},
     )
     data["check"] = _check_text(format, layout, data)
+    if "references" in data:
+        data["check"] += f" The reference list at the end has {data['references']} entries; citations missing from it are listed in warnings."
     return ToolResult(ok=True, data=data, preview_png=preview)
 
 

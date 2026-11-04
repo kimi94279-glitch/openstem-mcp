@@ -1,5 +1,7 @@
 """export_document: 마크다운 → docx/pdf. 그림은 결과물 폴더 안 파일만 들어간다."""
 
+import json
+import re
 import zipfile
 from pathlib import Path
 
@@ -313,3 +315,220 @@ def test_flashcards_math_cannot_read_files_through_split_plot(output_dir, tecton
     assert "TOKEN-should-not-leak" not in text
     assert "disabled" in text
 
+
+
+# ---- 참고문헌(bibliography·citation_style)과 기본 서식(template) ----
+
+BIB = """@article{newton1687,
+  author = {Newton, Isaac},
+  title = {Philosophi{\\ae} Naturalis Principia Mathematica},
+  journal = {Royal Society},
+  year = {1687},
+  doi = {10.1000/xyz}
+}
+@book{kim2020,
+  author = {김철수},
+  title = {일반물리학},
+  publisher = {서울대출판부},
+  year = {2020}
+}
+"""
+CITED = "## 결과\n\n뉴턴 [@newton1687]에 따르면 낙하 시간은 같다. 같은 결론은 @kim2020 에도 있다.\n"
+
+
+def _materials(output_dir: Path) -> Path:
+    folder = output_dir / "자료"  # OPENSTEM_INPUT_DIR이 없으면 결과물 폴더 안 자료 폴더
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+@pytest.fixture
+def bib(output_dir):
+    path = _materials(output_dir) / "refs.bib"
+    path.write_text(BIB, encoding="utf-8")
+    return path
+
+
+def _xml_text(path: Path, prefix: str) -> str:
+    with zipfile.ZipFile(path) as z:
+        return " ".join(z.read(n).decode("utf-8") for n in sorted(z.namelist()) if n.startswith(prefix) and n.endswith(".xml"))
+
+
+def test_docx_citations_and_reference_list(bib, output_dir):
+    result = export_document(CITED, "docx", title="보고서", bibliography="refs.bib", citation_style="apa")
+    assert result.ok, result.data
+    assert result.data["references"] == 2 and result.data["citations"] == 2
+    assert "warnings" not in result.data, result.data["warnings"]
+    xml = _xml_text(Path(result.data["path"]), "word/document.xml")
+    assert "(Newton, 1687)" in xml and "김철수 (2020)" in xml  # APA 본문 인용
+    assert "참고문헌" in xml and "principia" in xml and 'w:val="Bibliography"' in xml
+    record = json.loads(Path(result.data["record_path"]).read_text(encoding="utf-8"))
+    assert record["inputs"]["bibliography"] == "refs.bib" and record["results"]["references"] == 2
+
+
+def test_pptx_reference_list_is_its_own_slide(bib, output_dir):
+    result = export_document(CITED, "pptx", bibliography=str(bib), citation_style="ieee")
+    assert result.ok, result.data
+    assert result.data["slides"] == 2  # 결과 + 참고문헌(## 제목으로 바꿔 한 장)
+    xml = _xml_text(Path(result.data["path"]), "ppt/slides/")
+    assert "[1] I. Newton" in xml and "참고문헌" in xml and "[2] 김철수" in xml
+
+
+def test_pdf_citations_and_english_heading(output_dir, tectonic):
+    path = _materials(output_dir) / "refs.json"  # CSL JSON
+    path.write_text(json.dumps([{"id": "doe2020", "type": "book", "title": "Mechanics", "author": [{"family": "Doe", "given": "Jane"}], "issued": {"date-parts": [[2020]]}}]), encoding="utf-8")
+    result = export_document("## Summary\n\nFree fall is uniform [@doe2020, p. 3].\n", "pdf", bibliography="refs.json")
+    assert result.ok, result.data
+    import pymupdf
+
+    text = pymupdf.open(result.data["path"])[0].get_text()
+    assert "References" in text and "Mechanics" in text and "Doe" in text and "2020, 3" in text  # Chicago author-date
+
+
+def test_missing_citation_key_is_a_short_warning(bib, output_dir):
+    result = export_document("## A\n\nSee [@nobody; @kim2020].\n", "docx", bibliography="refs.bib")
+    assert result.ok, result.data
+    warning = " ".join(result.data["warnings"])
+    assert "nobody" in warning and "not in the bibliography" in warning
+    assert result.data["references"] == 1
+
+
+def test_citations_without_bibliography_warn(output_dir):
+    result = export_document("## A\n\nSee [@kim2020].\n", "docx")
+    assert result.ok and "no bibliography" in " ".join(result.data["warnings"])
+
+
+def test_user_written_references_heading_is_not_repeated(bib, output_dir):
+    result = export_document(CITED + "\n# 참고문헌\n", "docx", bibliography="refs.bib")
+    assert result.ok, result.data
+    texts = re.findall(r"<w:t[^>]*>([^<]*)</w:t>", _xml_text(Path(result.data["path"]), "word/document.xml"))
+    assert texts.count("참고문헌") == 1
+
+
+@pytest.mark.parametrize(
+    ("make_path", "fragment"),
+    [
+        (lambda tmp, mat: str(tmp / "outside.bib"), "inside the materials folder"),
+        (lambda tmp, mat: "../../outside.bib", "inside the materials folder"),
+        (lambda tmp, mat: "없음.bib", "not found"),
+        (lambda tmp, mat: "notes.txt", ".bib/.json/.yaml"),
+        (lambda tmp, mat: "link.bib", "inside the materials folder"),  # 폴더 밖을 가리키는 심볼릭 링크
+    ],
+)
+def test_bibliography_outside_folder_or_wrong_type_is_rejected(tmp_path, output_dir, make_path, fragment):
+    mat = _materials(output_dir)
+    (tmp_path / "outside.bib").write_text(BIB, encoding="utf-8")
+    (mat / "notes.txt").write_text("x", encoding="utf-8")
+    try:
+        (mat / "link.bib").symlink_to(tmp_path / "outside.bib")
+    except OSError:
+        pytest.skip("심볼릭 링크를 만들 수 없다")
+    result = export_document(CITED, "docx", bibliography=make_path(tmp_path, mat))
+    assert not result.ok
+    assert fragment in " ".join(result.data["errors"]), result.data
+
+
+def test_bibliography_content_goes_through_the_same_checks(output_dir):
+    """참고문헌(.yaml은 마크다운)에서 온 그림·수식도 check_ast를 거치고, raw TeX는 글자가 된다."""
+    mat = _materials(output_dir)
+    (mat / "img.yaml").write_text(
+        'references:\n- id: a\n  type: book\n  title: "![x](https://example.com/a.png)"\n  issued: {date-parts: [[2020]]}\n', encoding="utf-8"
+    )
+    result = export_document("## A\n\n[@a]\n", "docx", bibliography="img.yaml")
+    assert not result.ok and "URLs" in " ".join(result.data["errors"])
+
+    (mat / "math.bib").write_text("@book{b, title = {Danger $\\input{secret}$ and \\weird{x}}, year = {2020}}\n", encoding="utf-8")
+    result = export_document("## A\n\n[@b]\n", "docx", bibliography="math.bib")
+    assert not result.ok and "\\input" in " ".join(result.data["errors"])
+
+    (mat / "raw.bib").write_text("@book{c, title = {Plain \\weird{x}}, year = {2020}}\n", encoding="utf-8")
+    result = export_document("## A\n\n[@c]\n", "docx", bibliography="raw.bib")
+    assert result.ok and "plain text" in " ".join(result.data["warnings"])
+
+
+def test_citeproc_runs_in_the_sandboxed_parse_step(bib, output_dir, monkeypatch):
+    """인용은 --sandbox 단계에서 작업 폴더에 복사한 파일로만 처리한다(네트워크·다른 파일에 닿지 않는다)."""
+    from openstem.tools import export as export_module
+
+    calls = []
+    real = export_module._pandoc
+    monkeypatch.setattr(export_module, "_pandoc", lambda args, workdir: (calls.append(args), real(args, workdir))[1])
+    assert export_document(CITED, "docx", bibliography=str(bib), citation_style="apa").ok
+    parse, write = calls
+    assert "--sandbox" in parse and "--citeproc" in parse
+    assert "--bibliography=refs.bib" in parse and "--csl=style.csl" in parse  # 상대 이름: 작업 폴더 안 복사본
+    assert not any("citeproc" in a or "bibliography" in a for a in write)
+
+
+def test_bundled_csl_styles_are_independent_and_credited():
+    """CSL은 부모 서식을 내려받지 않는(독립) 서식만 넣고, 출처·라이선스를 적는다."""
+    from openstem.tools.export import CITATION_STYLES, CSL_DIR
+
+    root = Path(__file__).resolve().parents[1]
+    third_party = (root / "THIRD_PARTY.md").read_text(encoding="utf-8")
+    for style in CITATION_STYLES:
+        if style == "chicago":
+            continue  # pandoc에 든 기본 서식
+        text = (CSL_DIR / f"{style}.csl").read_text(encoding="utf-8")
+        assert 'rel="independent-parent"' not in text
+        assert "Creative Commons Attribution-ShareAlike 3.0" in text[:600]  # 파일 머리 주석
+        assert f"{style}.csl" in third_party
+
+
+def test_citation_style_and_template_argument_errors(output_dir):
+    assert "citation_style" in " ".join(export_document("x", "docx", citation_style="harvard").data["errors"])
+    assert "flashcards" in " ".join(export_document("x", "pdf", layout="flashcards", bibliography="a.bib").data["errors"])
+    assert "docx or pptx" in " ".join(export_document("x", "pdf", template="a.docx").data["errors"])
+
+
+def test_default_docx_template_fonts_and_table_style(output_dir):
+    result = export_document("# 제목\n\n본문\n\n| 가 | 나 |\n|---|---|\n| 1 | 2 |\n", "docx")
+    assert result.ok, result.data
+    with zipfile.ZipFile(result.data["path"]) as z:
+        styles = z.read("word/styles.xml").decode("utf-8")
+        assert 'w:eastAsia="Malgun Gothic"' in styles and 'w:ascii="Malgun Gothic"' in styles
+        assert "Aptos" not in styles and "majorHAnsi" not in styles  # 테마 글꼴이 남지 않았다
+        assert 'w:eastAsia="ko-KR"' in styles and 'w:fill="DEE6F2"' in styles  # 표 머리 행
+        assert re.search(r'<w:pgSz (w:h="16838" w:w="11906"|w:w="11906" w:h="16838")', z.read("word/document.xml").decode("utf-8"))  # A4
+        assert "m:oMath" not in styles  # 수식 서식은 건드리지 않는다
+
+
+def test_default_pptx_template_is_16_9_with_theme(output_dir):
+    result = export_document("## 슬라이드\n\n- 내용\n", "pptx")
+    assert result.ok, result.data
+    with zipfile.ZipFile(result.data["path"]) as z:
+        assert 'type="screen16x9"' in z.read("ppt/presentation.xml").decode("utf-8")
+        theme = "".join(z.read(n).decode("utf-8") for n in z.namelist() if n.startswith("ppt/theme/"))
+        assert '<a:latin typeface="Malgun Gothic"/>' in theme and "1F3864" in theme
+
+
+def test_reference_docs_match_the_generator():
+    """render/reference.docx·pptx는 refdocs.py로 다시 만들 수 있어야 한다(손으로 고친 파일이 아님)."""
+    pypandoc = pytest.importorskip("pypandoc")
+    from openstem.render import refdocs
+
+    for path, patch, name in ((refdocs.DOCX_PATH, refdocs.docx_parts, "reference.docx"), (refdocs.PPTX_PATH, refdocs.pptx_parts, "reference.pptx")):
+        expected = patch(refdocs._default_data_file(pypandoc.get_pandoc_path(), name))
+        with zipfile.ZipFile(path) as z:
+            actual = {n: z.read(n) for n in z.namelist()}
+        assert actual == expected, f"{name}: run `uv run python -m openstem.render.refdocs`"
+
+
+def test_user_template_replaces_default_styles(output_dir):
+    """사용자 template(자료 폴더 안)을 쓰면 그 서식이 들어가고, 폴더 밖·가짜 파일은 거절한다."""
+    import subprocess
+
+    import pypandoc
+
+    mat = _materials(output_dir)
+    mine = mat / "학교양식.docx"
+    subprocess.run([pypandoc.get_pandoc_path(), "-o", str(mine), "--print-default-data-file", "reference.docx"], check=True)
+    result = export_document("# 제목\n\n본문\n", "docx", template="학교양식.docx")
+    assert result.ok, result.data
+    with zipfile.ZipFile(result.data["path"]) as z:
+        assert "Malgun Gothic" not in z.read("word/styles.xml").decode("utf-8")  # pandoc 기본 양식 그대로
+
+    (mat / "fake.docx").write_text("not a zip", encoding="utf-8")
+    assert "not a valid docx" in " ".join(export_document("# A\n", "docx", template="fake.docx").data["errors"])
+    assert "inside the materials folder" in " ".join(export_document("# A\n", "docx", template="/etc/passwd.docx").data["errors"])
+    assert ".pptx" in " ".join(export_document("## A\n", "pptx", template="학교양식.docx").data["errors"])

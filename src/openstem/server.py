@@ -245,8 +245,16 @@ def export_document(
     title: str = "",
     layout: Literal["document", "cheatsheet", "exam", "flashcards"] = "document",
     name: Annotated[str, Field(description="File name (default: title)")] = "",
+    bibliography: Annotated[str, Field(description=".bib, CSL .json or .yaml file in the materials folder; cite as [@key]")] = "",
+    citation_style: Literal["chicago", "apa", "ieee", "mla"] = "chicago",
+    template: Annotated[str, Field(description="docx/pptx only: a .docx/.pptx in the materials folder whose styles to use")] = "",
 ) -> CallToolResult:
-    return _to_mcp(export.export_document(markdown, format, title or None, layout, name or None))
+    return _to_mcp(
+        export.export_document(
+            markdown, format, title or None, layout, name or None,
+            bibliography=bibliography or None, citation_style=citation_style, template=template or None,
+        )
+    )
 
 
 @mcp.tool(

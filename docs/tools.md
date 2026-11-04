@@ -103,7 +103,7 @@
 
 ## export_document
 
-- 입력: `markdown`(수식은 `$...$`, 그림은 render_*·plot_*가 돌려준 경로를 이미지 문법으로), `format`(pdf | docx | pptx), `title?`, `layout`(document | cheatsheet | exam | flashcards), `name?`
+- 입력: `markdown`(수식은 `$...$`, 그림은 render_*·plot_*가 돌려준 경로를 이미지 문법으로, 인용은 `[@key]`), `format`(pdf | docx | pptx), `title?`, `layout`(document | cheatsheet | exam | flashcards), `name?`, `bibliography?`, `citation_style`(chicago | apa | ieee | mla), `template?`
 - 처리: [ARCHITECTURE.md](ARCHITECTURE.md#문서-내보내기)의 순서대로. docx·pptx에는 SVG 대신 PNG(300 dpi)를 넣는다.
 - 반환: 파일 경로, pdf면 첫 쪽 미리보기와 `pages`, pptx면 `slides`, exam이면 `problems`·`answer_page`, flashcards면 `cards`·`tsv_path`, `source_path`(입력 마크다운 `<stem>.md`. 그림 경로는 결과물 폴더 기준 상대 경로로 바꿔 그대로 다시 내보낼 수 있다), `record_path`(입력·`pages`·`problems` 등 결과, 쓰인 그림, pandoc·tectonic 버전)
 - **cheatsheet**(pdf 전용): A4 두 단. `pages`가 1보다 크면 경고해서 LLM이 줄이게 한다. docx·pptx로 부르면 보통 문서로 만들고 그렇게 알린다.
@@ -111,6 +111,16 @@
 - **flashcards**(pdf 전용): 2열 표(앞면 | 뒷면) → 오려 쓰는 카드 PDF(양면 인쇄용) + 암기 앱 가져오기용 탭 구분 텍스트(`tsv_path`, 확장자 .txt, 수식은 `\(...\)`). 2열이 아닌 표, 빈 면은 에러. 카드보다 긴 글은 줄이고 그 카드 번호를 경고한다.
 - **pptx**: pandoc pptx 작성기(수식은 편집 가능한 수식). `##` 하나가 슬라이드 한 장, `::: notes`는 발표자 노트. 미리보기가 없어서 한 장에 줄이 너무 많은 슬라이드와 `##`가 없는 문서를 경고한다.
 - 첫 실행 준비(warmup)는 배치마다 문서를 하나씩 컴파일한다(`export.WARMUP_MARKDOWN`).
+- **참고문헌**(`bibliography?`, `citation_style`): 자료·결과물 폴더 안의 `.bib`·`.json`(CSL JSON)·`.yaml` 파일(read_document와 같은 폴더 제한, 심볼릭 링크는 실제 위치로 판단, 2 MB까지)을 서버가 검사해 작업 폴더에 `refs.<확장자>`로 복사한다. 첫 단계 pandoc(`--sandbox`: 명령줄에 준 파일만 읽고 네트워크를 쓰지 않는다)이 `--citeproc`으로 `[@key]`·`[@key, p. 3]`·`@key` 인용을 바꾸고 문서 끝에 참고문헌 목록을 넣는다. 그 뒤 수식·그림 검사(check_ast)를 참고문헌에서 온 글에도 똑같이 한다(`.yaml` 속 URL 그림, `.bib` 속 `$\input{…}$`는 거절). `.bib`의 모르는 TeX 명령(raw TeX)은 글자로 바꾸고 경고한다.
+  - `citation_style`: `chicago`(기본, pandoc에 든 Chicago author-date), `apa`, `ieee`, `mla`. CSL 파일은 `render/csl/`에 넣어 둔 독립 서식만 쓰고(부모 서식을 내려받지 않는다), 사용자 CSL은 받지 않는다. 출처·라이선스(CC BY-SA 3.0)는 [THIRD_PARTY.md](../THIRD_PARTY.md).
+  - 목록 제목: 한국어 문서(한글이 있으면)는 "참고문헌", 아니면 "References". 마크다운 끝에 `# 참고문헌`·`# References` 제목을 직접 썼으면 제목을 또 넣지 않는다. 인용 속 낱말(and, et al.)은 서식의 영어 낱말 그대로 둔다(CSL 한국어 낱말은 영어 문헌에도 "Lee 와/과 Park 2019 년"처럼 붙어 어색하다).
+  - pptx는 참고문헌 제목을 `##`로 바꿔 마지막 슬라이드 한 장으로 만든다(항목이 많으면 넘침 경고).
+  - 반환: `references`(목록 항목 수), `citations`(인용 수). 없는 키는 `Citation keys not in the bibliography: …` 경고 한 줄(문서에는 굵은 `key?`로 나온다), bibliography 없이 `[@key]`를 쓰면 그대로 글자로 나온다고 경고, 인용 없는 bibliography도 경고. `layout="flashcards"`와는 함께 쓰지 않는다.
+- **기본 서식**(docx·pptx): `--reference-doc`으로 `render/reference.docx`·`reference.pptx`를 쓴다. pandoc 기본 데이터 파일에서 XML만 고쳐 `render/refdocs.py`가 만든다(`uv run python -m openstem.render.refdocs`로 다시 만들고, 시험이 저장된 파일과 생성 결과가 같은지 본다).
+  - docx: 본문·제목 맑은 고딕(Malgun Gothic, fontTable에 한글 charset을 적어 없는 PC에서는 시스템 한글 글꼴로 대체), 11pt·1.3줄, A4·2.5cm 여백, 짙은 남색 굵은 제목(`#` 아래 선), 위·아래·머리 행 선과 옅은 머리 행 바탕의 표, 회색 그림·표 설명(기울이지 않음), 참고문헌 내어쓰기. 수식(OMML)과 코드(Consolas)는 그대로.
+  - pptx: 16:9(pandoc 기본), 남색·파랑 색 테마, 맑은 고딕, 왼쪽 정렬 굵은 남색 슬라이드 제목.
+  - `template?`: 자료·결과물 폴더 안의 `.docx`(docx일 때)·`.pptx`(pptx일 때) 파일을 대신 쓴다. 확장자가 형식과 맞아야 하고, zip 안에 `word/styles.xml`·`ppt/presentation.xml`이 있어야 한다(30 MB까지). pdf에는 쓰지 않는다.
+- 기록(`record_path`)의 `inputs`에 `bibliography`·`citation_style`·`template`, `results`에 `references`·`citations`가 들어간다.
 
 ## 프롬프트 (MCP prompts)
 
