@@ -4,6 +4,21 @@
 
 ## [Unreleased]
 
+### 추가
+
+- 재현 기록: render_tikz·export_document·plot_function·plot_data·render_molecule가 결과물 옆에 `<이름>.json`(입력, 프로그램 버전, 맞춤 결과, 시각)과 원본(TikZ `.tex`, 내보낸 `.md`, 데이터 `.csv`)을 남긴다. 결과에 `source_path`·`record_path`. `OPENSTEM_RECORD=0`으로 끈다.
+- `openstem-mcp --doctor [--json] [--offline]`: 설치 진단(tectonic, TeX 준비, 번들 서버 연결, 폴더 권한, 계산 작업자, LMS 설정 여부). 끝에 비밀을 가린 이슈용 요약을 출력한다.
+- read_document 추출 결과 캐시(200 MB, `OPENSTEM_READ_CACHE=0`으로 끔). 긴 문서의 다음 묶음(part)을 다시 추출하지 않는다.
+- 문서: 결정 기록 0011(Moodle 파일 id·sync 보호), 0012(TeX 방어선), 0013(CI·배포 관문), 함께 쓸 외부 도구 안내([docs/companions.md](docs/companions.md)), 영어 README([README.en.md](README.en.md)), 업데이트·완전 제거 안내.
+
+### 고침
+
+- verify_math: 식을 읽을 때 약분돼 사라지는 분모·로그·짝수 근 조건으로 해를 거른다(`1/(x-1) = 1/(x-1) + x - 1`은 해 없음, `x/x = 1`은 x≠0). 수치 근 찾기를 ±10에서 ±1000까지 넓히고, 범위 끝에서도 부등식이 성립하면 알린다.
+- Windows에서도 계산 작업자 메모리 상한(Job Object, `OPENSTEM_WORKER_MEMORY_MB`)을 둔다.
+- HWP 압축 해제 크기 합계에 상한(200 MB)을 둔다.
+- tectonic 설치가 중간에 끊겨 남은 임시 파일을 지운다.
+- 플러그인 스킬이 openstem 툴이 없는 환경(claude.ai 채팅 등)에서 그렇다고 알리고 설치를 안내한다. 스킬·프롬프트가 부르는 툴 인자가 실제 스키마와 맞는지 시험한다.
+
 ## [0.3.3] - 2026-11-04
 
 2026-11-03 기술·보안 감사에서 나온 문제를 고친 릴리스다.

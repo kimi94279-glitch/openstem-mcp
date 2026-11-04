@@ -44,8 +44,8 @@ def memory_limit_mb() -> int:
 def limit_memory() -> int | None:
     """POSIX에서 이 프로세스의 주소 공간 상한(RLIMIT_AS)을 둔다. 둔 상한(MB)을 돌려준다.
 
-    Windows에는 resource 모듈이 없어 상한이 없다(Job Object는 아직 쓰지 않는다). macOS는 RLIMIT_AS를
-    잘 지키지 않아 사실상 상한이 없다. 둘 다 SECURITY.md의 알려진 한계에 적어 두었다.
+    Windows는 여기서 걸지 않고 sandbox._spawn이 작업자를 Job Object에 넣어 같은 상한을 건다. macOS는 RLIMIT_AS를
+    잘 지키지 않아 사실상 상한이 없다(SECURITY.md의 알려진 한계).
     """
     mb = memory_limit_mb()
     if mb <= 0:
