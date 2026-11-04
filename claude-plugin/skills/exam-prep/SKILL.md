@@ -8,6 +8,7 @@ description: Turn course materials into exam preparation - summaries, one-page A
 ## 1. Get the material (never invent course content)
 
 - Files on the computer: `read_document` with no path lists the materials folder; read with `pages` for long PDFs, and `mode="images"` for scanned or formula-heavy pages. Korean HWP files work.
+- Picking problems from a past exam ("a problem like No. 3"): `read_document` with `mode="problems"` splits it into numbered problems; add `problem="3"` (or `"3-5"`) for just those, with cropped images of their figures for PDF.
 - School LMS: `lms` `action="sync"` with the course name downloads all new course files into the materials folder (call again if it says files remain), then read them with `read_document`. For one file use `action="files"` then `action="download"`.
 - Nothing available: ask the user to put the files in the materials folder or attach them.
 
