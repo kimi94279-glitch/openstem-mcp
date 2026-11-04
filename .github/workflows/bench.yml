@@ -1,0 +1,53 @@
+# 정확도 벤치마크(benchmarks/math, 사례 414개)를 손으로 또는 매주 돌려 요약을 job summary에, 전체 결과를 artifact로 남긴다.
+# 배포를 막지 않는다: publish.yml은 이 워크플로를 부르지 않고, 기준선보다 나빠져도 이 job은 경고만 남기고 통과한다.
+# PR·push마다 도는 빠른 일부는 ci.yml의 pytest(tests/test_benchmark.py)가 맡는다.
+# 서드파티 Action은 ci.yml처럼 커밋 SHA로 고정한다(주석은 태그).
+name: Benchmark
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 19 * * 0"  # 매주 월요일 04:17 KST
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: true
+      - name: Install (uv.lock as is)
+        run: uv sync --locked --all-extras
+      # 계산 툴(sympy·pint·RDKit·matplotlib 작업자)만 쓰므로 TeX 준비는 하지 않는다.
+      - name: Run benchmark
+        id: bench
+        run: |
+          set +e
+          uv run --locked --all-extras python scripts/bench.py --json bench-results.json --markdown bench-summary.md --fail-on-regression
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          exit 0
+      - name: Write job summary
+        if: always()
+        run: |
+          if [ -f bench-summary.md ]; then cat bench-summary.md >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ "${{ steps.bench.outputs.status }}" = "1" ]; then
+            echo "::warning title=Benchmark::기준선(benchmarks/math/baseline.json)보다 나빠진 사례가 있다. job summary의 '기준선보다 나빠진 사례'를 본다."
+          elif [ "${{ steps.bench.outputs.status }}" != "0" ]; then
+            echo "::warning title=Benchmark::벤치마크 실행이 끝나지 않았다(종료 코드 ${{ steps.bench.outputs.status }})."
+          fi
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9  # v7.0.2
+        if: always()
+        with:
+          name: bench-results
+          path: |
+            bench-results.json
+            bench-summary.md
+          if-no-files-found: warn
+          retention-days: 90

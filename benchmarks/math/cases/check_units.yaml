@@ -1,0 +1,648 @@
+# check_units: 단위 변환(value/to)과 식의 차원 검사(expr/units/expect)
+# 원본: benchmarks/raw/audit-2026-11-03.json(2026-11-03 감사). input·expect는 원본 그대로, correct/partial/severe는 기계 판정 조건.
+# 문법은 benchmarks/math/README.md. note는 사람의 기대를 고치거나 해석한 이유, known_issue는 아직 틀리는 원인 한 줄.
+
+tool: check_units
+cases:
+
+- id: units/kmh
+  input: {value: 72 km/h, to: m/s}
+  expect: '20'
+  correct:
+  - {ok: true}
+  - num: {value: 20, rel: 0.0001, path: magnitude}
+  - eq: {unit: m/s}
+  quick: true
+
+- id: units/ev_j
+  input: {value: 1 eV, to: J}
+  expect: '1.602176634e-19'
+  correct:
+  - {ok: true}
+  - num: {value: 1.602176634e-19, rel: 0.0001, path: magnitude}
+  - eq: {unit: J}
+
+- id: units/degC_K
+  input: {value: 25 degC, to: K}
+  expect: '298.15'
+  correct:
+  - {ok: true}
+  - num: {value: 298.15, rel: 0.0001, path: magnitude}
+  - eq: {unit: K}
+
+- id: units/degC_degF
+  input: {value: 100 degC, to: degF}
+  expect: '212'
+  correct:
+  - {ok: true}
+  - num: {value: 212, rel: 0.0001, path: magnitude}
+
+- id: units/degF_degC
+  input: {value: -40 degF, to: degC}
+  expect: '-40'
+  correct:
+  - {ok: true}
+  - num: {value: -40, rel: 0.0001, path: magnitude}
+
+- id: units/deg_symbol
+  input: {value: 25 °C, to: K}
+  expect: '298.15'
+  correct:
+  - {ok: true}
+  - num: {value: 298.15, rel: 0.0001, path: magnitude}
+  - eq: {unit: K}
+
+- id: units/rpm_hz
+  input: {value: 60 rpm, to: Hz}
+  expect: 1 Hz (rotation frequency)
+  correct:
+  - {ok: true}
+  - num: {value: 1, rel: 0.0001, path: magnitude}
+  - eq: {unit: Hz}
+  severe:
+  - num: {value: 6.2831853, rel: 0.0001, path: magnitude}
+  note: 'Hz counts cycles per second: 60 rpm = 1 Hz (6.283 would be rad/s mislabelled as Hz).'
+  quick: true
+
+- id: units/hz_rpm
+  input: {value: 1 Hz, to: rpm}
+  expect: 60 rpm
+  correct:
+  - {ok: true}
+  - num: {value: 60, rel: 0.0001, path: magnitude}
+  severe:
+  - num: {value: 9.5492966, rel: 0.0001, path: magnitude}
+
+- id: units/rpm_rads
+  input: {value: 60 rpm, to: rad/s}
+  expect: '6.2832'
+  correct:
+  - {ok: true}
+  - num: {value: 6.2832, rel: 0.0001, path: magnitude}
+
+- id: units/rads_hz
+  input: {value: 1 rad/s, to: Hz}
+  expect: 0.159 Hz (f = w/2pi)
+  correct:
+  - {ok: true}
+  - num: {value: 0.159155, rel: 0.0001, path: magnitude}
+  severe:
+  - num: {value: 1, rel: 1.0e-06, path: magnitude}
+  quick: true
+
+- id: units/ton_kg
+  input: {value: 5 ton, to: kg}
+  expect: 5000 (metric, Korea) ; pint short ton = 4535.9
+  correct:
+  - {ok: true}
+  - any:
+    - - num: {value: 5000, rel: 1.0e-06, path: magnitude}
+    - - num: {value: 4535.9237, rel: 1.0e-06, path: magnitude}
+      - has:
+          path: note
+          words: [tonne]
+  partial:
+  - {ok: true}
+  - num: {value: 4535.9237, rel: 1.0e-06, path: magnitude}
+  note: '''ton'' is ambiguous (Korean usage: metric tonne; pint: US short ton). Either is correct if the short-ton reading is flagged.'
+
+- id: units/t_kg
+  input: {value: 5 t, to: kg}
+  expect: '5000'
+  correct:
+  - {ok: true}
+  - num: {value: 5000, rel: 0.0001, path: magnitude}
+
+- id: units/kwh_j
+  input: {value: 1 kWh, to: J}
+  expect: 3.6e6
+  correct:
+  - {ok: true}
+  - num: {value: 3600000.0, rel: 0.0001, path: magnitude}
+
+- id: units/kw_h_j
+  input: {value: 1 kW*h, to: J}
+  expect: 3.6e6
+  correct:
+  - {ok: true}
+  - num: {value: 3600000.0, rel: 0.0001, path: magnitude}
+
+- id: units/cal_j
+  input: {value: 1 cal, to: J}
+  expect: '4.184'
+  correct:
+  - {ok: true}
+  - num: {value: 4.184, rel: 0.0001, path: magnitude}
+
+- id: units/kcal_j
+  input: {value: 1 kcal, to: J}
+  expect: '4184'
+  correct:
+  - {ok: true}
+  - num: {value: 4184, rel: 0.0001, path: magnitude}
+
+- id: units/Cal_j
+  input: {value: 1 Cal, to: J}
+  expect: 4184 (food calorie)
+  correct:
+  - {ok: true}
+  - num: {value: 4184, rel: 0.0001, path: magnitude}
+  partial:
+  - error: [Cal, kcal]
+  known_issue: '''Cal'' (food calorie = kcal) is an unknown unit; the error does not suggest kcal.'
+
+- id: units/atm_pa
+  input: {value: 1 atm, to: Pa}
+  expect: '101325'
+  correct:
+  - {ok: true}
+  - num: {value: 101325, rel: 0.0001, path: magnitude}
+
+- id: units/mmhg
+  input: {value: 760 mmHg, to: atm}
+  expect: '1.0000'
+  correct:
+  - {ok: true}
+  - num: {value: 1.0, rel: 1.0e-05, path: magnitude}
+
+- id: units/psi
+  input: {value: 1 psi, to: kPa}
+  expect: '6.89476'
+  correct:
+  - {ok: true}
+  - num: {value: 6.89476, rel: 0.0001, path: magnitude}
+
+- id: units/liter
+  input: {value: 2 L, to: m^3}
+  expect: '0.002'
+  correct:
+  - {ok: true}
+  - num: {value: 0.002, rel: 0.0001, path: magnitude}
+
+- id: units/ml_cc
+  input: {value: 1 mL, to: cm^3}
+  expect: '1'
+  correct:
+  - {ok: true}
+  - num: {value: 1, rel: 0.0001, path: magnitude}
+
+- id: units/angstrom
+  input: {value: 1 Å, to: nm}
+  expect: '0.1'
+  correct:
+  - {ok: true}
+  - num: {value: 0.1, rel: 0.0001, path: magnitude}
+
+- id: units/micro_sign
+  input: {value: 5 µm, to: m}
+  expect: 5e-6
+  correct:
+  - {ok: true}
+  - num: {value: 5.0e-06, rel: 0.0001, path: magnitude}
+
+- id: units/micro_greek
+  input: {value: 5 μm, to: m}
+  expect: 5e-6
+  correct:
+  - {ok: true}
+  - num: {value: 5.0e-06, rel: 0.0001, path: magnitude}
+
+- id: units/dB
+  input: {value: 20 dB, to: '1'}
+  expect: 100 (power ratio) or 10 (amplitude)
+  correct:
+  - {ok: true}
+  - any:
+    - - num: {value: 100, rel: 0.0001, path: magnitude}
+    - - num: {value: 10, rel: 0.0001, path: magnitude}
+  - lacks: [temperature]
+  partial:
+  - {ok: true}
+  - any:
+    - - num: {value: 100, rel: 0.0001, path: magnitude}
+    - - num: {value: 10, rel: 0.0001, path: magnitude}
+  note: 100 (power ratio) or 10 (amplitude ratio) are both right; a note that calls dB a temperature is wrong.
+  known_issue: value is right (100) but the note says 'Converted 20 dB as a temperature reading' (the ΔT hint fires for dB).
+  quick: true
+
+- id: units/percent
+  input: {value: 50 %, to: '1'}
+  expect: '0.5'
+  correct:
+  - {ok: true}
+  - num: {value: 0.5, rel: 0.0001, path: magnitude}
+
+- id: units/gal_l
+  input: {value: 1 gal, to: L}
+  expect: '3.785'
+  correct:
+  - {ok: true}
+  - num: {value: 3.78541, rel: 0.0001, path: magnitude}
+
+- id: units/u_kg
+  input: {value: 1 u, to: kg}
+  expect: '1.6605e-27'
+  correct:
+  - {ok: true}
+  - num: {value: 1.66054e-27, rel: 0.0001, path: magnitude}
+
+- id: units/mph
+  input: {value: 60 mph, to: km/h}
+  expect: '96.56'
+  correct:
+  - {ok: true}
+  - num: {value: 96.5606, rel: 0.0001, path: magnitude}
+
+- id: units/lightyear
+  input: {value: 1 ly, to: m}
+  expect: 9.4607e15
+  correct:
+  - {ok: true}
+  - num: {value: 9460700000000000.0, rel: 0.0001, path: magnitude}
+
+- id: units/hp_w
+  input: {value: 1 hp, to: W}
+  expect: '745.7'
+  correct:
+  - {ok: true}
+  - num: {value: 745.7, rel: 0.0001, path: magnitude}
+
+- id: units/knot
+  input: {value: 1 knot, to: m/s}
+  expect: '0.5144'
+  correct:
+  - {ok: true}
+  - num: {value: 0.514444, rel: 0.0001, path: magnitude}
+
+- id: units/gauss_T
+  input: {value: 1 G, to: T}
+  expect: 1e-4 (gauss)
+  correct:
+  - {ok: true}
+  - num: {value: 0.0001, rel: 0.0001, path: magnitude}
+  partial:
+  - error: [gauss]
+  known_issue: pint reads 'G' as the gravitational constant; conversion fails without suggesting 'gauss'.
+
+- id: units/deg_rad
+  input: {value: 180 deg, to: rad}
+  expect: '3.14159'
+  correct:
+  - {ok: true}
+  - num: {value: 3.14159, rel: 0.0001, path: magnitude}
+
+- id: units/delta_degC_K
+  input: {value: 10 delta_degC, to: K}
+  expect: '10'
+  correct:
+  - {ok: true}
+  - num: {value: 10, rel: 0.0001, path: magnitude}
+
+- id: units/degC_to_J
+  input: {value: 25 degC, to: J}
+  expect: error
+  correct:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: units/min_s
+  input: {value: 2 min, to: s}
+  expect: '120'
+  correct:
+  - {ok: true}
+  - num: {value: 120, rel: 0.0001, path: magnitude}
+
+- id: units/h_s
+  input: {value: 1 h, to: s}
+  expect: '3600'
+  correct:
+  - {ok: true}
+  - num: {value: 3600, rel: 0.0001, path: magnitude}
+
+- id: units/mol
+  input: {value: 2 mol, to: mmol}
+  expect: '2000'
+  correct:
+  - {ok: true}
+  - num: {value: 2000, rel: 0.0001, path: magnitude}
+
+- id: units/M_conc
+  input: {value: 0.1 M, to: mol/L}
+  expect: '0.1'
+  correct:
+  - {ok: true}
+  - num: {value: 0.1, rel: 0.0001, path: magnitude}
+
+- id: units/bar_pa
+  input: {value: 1 bar, to: Pa}
+  expect: 1e5
+  correct:
+  - {ok: true}
+  - num: {value: 100000.0, rel: 0.0001, path: magnitude}
+
+- id: units/si_default
+  input: {value: 1 kWh, to: null}
+  expect: 3.6e6 J
+  correct:
+  - {ok: true}
+  - num: {value: 3600000.0, rel: 0.0001, path: magnitude}
+  - in:
+      unit: [J, kg*m**2/s**2]
+  note: with no target the SI base form kg*m**2/s**2 (= J) is correct.
+
+- id: units/sqrt_unit
+  input: {value: 4 m^2, to: m}
+  expect: error
+  correct:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: units/freefall
+  input:
+    expr: sqrt(2*h/g)
+    units: {h: m, g: m/s^2}
+    expect: s
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  severe:
+  - eq: {matches: false}
+
+- id: units/pendulum
+  input:
+    expr: 2*pi*sqrt(L/g)
+    units: {L: m, g: m/s^2}
+    expect: s
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  severe:
+  - eq: {matches: false}
+
+- id: units/ke_values
+  input:
+    expr: m*v**2/2
+    units: {m: 2 kg, v: 3 m/s}
+    expect: J
+  expect: true, 9 J
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  - num: {value: 9, rel: 0.0001, path: magnitude}
+  partial:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+
+- id: units/coulomb
+  input:
+    expr: k*q1*q2/r**2
+    units: {k: N*m^2/C^2, q1: C, q2: C, r: m}
+    expect: N
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+
+- id: units/cap_energy
+  input:
+    expr: C*V**2/2
+    units: {C: F, V: V}
+    expect: J
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+
+- id: units/wrong_energy
+  input:
+    expr: m*g/h
+    units: {m: kg, g: m/s^2, h: m}
+    expect: J
+  expect: 'false'
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  severe:
+  - eq: {matches: true}
+
+- id: units/add_mismatch
+  input:
+    expr: m*v + m*g
+    units: {m: kg, v: m/s, g: m/s^2}
+    expect: null
+  expect: inconsistent
+  correct:
+  - {ok: true}
+  - eq: {consistent: false}
+  severe:
+  - eq: {consistent: true}
+
+- id: units/exp_dim
+  input:
+    expr: exp(t)
+    units: {t: s}
+    expect: null
+  expect: 'problem: exp arg dimensional'
+  correct:
+  - {ok: true}
+  - eq: {consistent: false}
+  - has:
+      path: problems
+      words: [exp]
+  partial:
+  - {ok: true}
+  - eq: {consistent: false}
+  severe:
+  - eq: {consistent: true}
+
+- id: units/exp_ok
+  input:
+    expr: V0*exp(-t/tau)
+    units: {V0: V, t: s, tau: s}
+    expect: V
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+
+- id: units/sin_deg_value
+  input:
+    expr: sin(theta)
+    units: {theta: 30 deg}
+    expect: '1'
+  expect: '0.5'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  - num: {value: 0.5, rel: 0.0001, path: magnitude}
+
+- id: units/log_dim
+  input:
+    expr: log(V2/V1)
+    units: {V2: m^3, V1: L}
+    expect: '1'
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+
+- id: units/log_bad
+  input:
+    expr: log(p)
+    units: {p: Pa}
+    expect: null
+  expect: problem
+  correct:
+  - {ok: true}
+  - eq: {consistent: false}
+  severe:
+  - eq: {consistent: true}
+
+- id: units/cancel_bug
+  input:
+    expr: x + y - y
+    units: {x: m, y: s}
+    expect: m
+  expect: inconsistent (m + s)
+  correct:
+  - {ok: true}
+  - eq: {consistent: false}
+  severe:
+  - eq: {consistent: true}
+  known_issue: x + y - y simplifies to x before the dimension check, so m + s is reported consistent (m).
+  quick: true
+
+- id: units/rpm_power
+  input:
+    expr: 2*pi*n*T
+    units: {n: rpm, T: N*m}
+    expect: W
+  expect: dimension ok
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+
+- id: units/rpm_power_val
+  input:
+    expr: 2*pi*n*T
+    units: {n: 3000 rpm, T: 10 N*m}
+    expect: W
+  expect: 3141.6 W
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  - num: {value: 3141.59, rel: 0.0001, path: magnitude}
+  partial:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  severe:
+  - num: {value: 19739.2, rel: 0.001, path: magnitude}
+  quick: true
+
+- id: units/ohm
+  input:
+    expr: V/R
+    units: {V: 12 V, R: 4 ohm}
+    expect: A
+  expect: 3 A
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  - num: {value: 3, rel: 0.0001, path: magnitude}
+
+- id: units/heat_degC
+  input:
+    expr: m*c*dT
+    units: {m: 2 kg, c: 4186 J/(kg*K), dT: 10 degC}
+    expect: J
+  expect: 83720 J (temperature difference) with warning
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  - num: {value: 83720, rel: 0.0001, path: magnitude}
+  partial:
+  - {ok: true}
+  - eq: {consistent: true}
+  - has:
+      path: warnings
+      words: [delta_degC]
+  severe:
+  - {ok: true}
+  - num: {value: 2370531.8, rel: 0.0001, path: magnitude}
+  - not:
+    - has:
+        path: warnings
+        words: [delta_degC]
+  note: 10 degC used as dT is a temperature difference; reading it as 283.15 K is acceptable only with a clear warning (partial).
+  known_issue: reads 10 degC as the absolute temperature 283.15 K (2.37e6 J); warns to use delta_degC but does not compute 83720 J.
+  quick: true
+
+- id: units/ideal_gas
+  input:
+    expr: n*R*T/V
+    units: {n: 1 mol, R: 8.314 J/(mol*K), T: 300 K, V: 0.0224 m^3}
+    expect: Pa
+  expect: 111348 Pa
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  - num: {value: 111348, rel: 0.0001, path: magnitude}
+
+- id: units/frac_exp
+  input:
+    expr: x**0.333333
+    units: {x: m^3}
+    expect: m
+  expect: approx m
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  note: 'x**0.333333 of m^3 is m**0.999999: ''approximately m'' is accepted.'
+
+- id: units/planck
+  input:
+    expr: h*f
+    units: {h: J*s, f: Hz}
+    expect: J
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+
+- id: units/torque_vs_energy
+  input:
+    expr: F*r
+    units: {F: N, r: m}
+    expect: J
+  expect: dimension same (note)
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  note: 'expect ''dimension same (note)'': N*m and J have the same dimension, so matches=true is correct; a torque note is nice-to-have.'
+
+- id: units/pow_var
+  input:
+    expr: x**n
+    units: {x: m, n: '1'}
+    expect: null
+  expect: problem
+  correct:
+  - {ok: true}
+  - eq: {consistent: false}
+  severe:
+  - eq: {consistent: true}
+
+- id: units/abs_val
+  input:
+    expr: abs(v)
+    units: {v: -3 m/s}
+    expect: m/s
+  expect: 3 m/s
+  correct:
+  - {ok: true}
+  - eq: {consistent: true, matches: true}
+  - num: {value: 3, rel: 0.0001, path: magnitude}

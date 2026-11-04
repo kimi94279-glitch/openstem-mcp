@@ -1,0 +1,284 @@
+# plot_data: 측정값 맞춤(가중치·모형별 계수), 표 읽기, 경고
+# 원본: benchmarks/raw/audit-2026-11-03.json(2026-11-03 감사). input·expect는 원본 그대로, correct/partial/severe는 기계 판정 조건.
+# 문법은 benchmarks/math/README.md. note는 사람의 기대를 고치거나 해석한 이유, known_issue는 아직 틀리는 원인 한 줄.
+
+tool: plot_data
+cases:
+
+- id: pdata/lin
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [3.3, 4.8, 7.1, 8.6, 11.25, 13.05, 14.85, 17.2]
+    fit: linear
+  expect: ols
+  correct:
+  - {ok: true}
+  - num: {value: 2.0006, rel: 0.001, path: series.0.fit.params.a.value}
+  - num: {value: 1.0161, rel: 0.001, path: series.0.fit.params.b.value}
+  - eq: {series.0.fit.weighted: false}
+  note: 'ordinary least squares: a = 2.0006, b = 1.0161.'
+  quick: true
+
+- id: pdata/lin_w
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [3.3, 4.8, 7.1, 8.6, 11.25, 13.05, 14.85, 17.2]
+      yerr: [0.1, 0.2, 0.1, 0.3, 0.2, 0.1, 0.4, 0.2]
+    fit: linear
+  expect: wls
+  correct:
+  - {ok: true}
+  - num: {value: 1.97739, rel: 0.001, path: series.0.fit.params.a.value}
+  - num: {value: 1.20121, rel: 0.001, path: series.0.fit.params.b.value}
+  - eq: {series.0.fit.weighted: true}
+  note: 'weighted least squares (w = 1/yerr^2): a = 1.9774, b = 1.2012.'
+
+- id: pdata/poly2
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [1.6, 1.9, 3.7, 5.8, 9.6, 14.0, 19.4, 26.1]
+    fit: poly2
+  expect: ols2
+  correct:
+  - {ok: true}
+  - num: {value: 0.50655, rel: 0.001, path: series.0.fit.params.a.value}
+  - num: {value: -1.0625, rel: 0.001, path: series.0.fit.params.b.value}
+  - num: {value: 2.12679, rel: 0.001, path: series.0.fit.params.c.value}
+  - eq: {series.0.fit.weighted: false}
+
+- id: pdata/exp
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [5.193472, 7.9102, 13.713969, 21.05881, 38.009381, 59.051479, 100.339819, 162.156506]
+    fit: exponential
+  expect: loglin
+  correct:
+  - {ok: true}
+  - num: {value: 3.0409, rel: 0.001, path: series.0.fit.params.A.value}
+  - num: {value: 0.49715, rel: 0.001, path: series.0.fit.params.B.value}
+  - eq: {series.0.fit.weighted: false}
+  note: y = A*exp(B*x) via a line fit to ln y.
+
+- id: pdata/exp_w
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [5.193472, 7.9102, 13.713969, 21.05881, 38.009381, 59.051479, 100.339819, 162.156506]
+      yerr: [0.259674, 0.39551, 0.685698, 1.05294, 1.900469, 2.952574, 5.016991, 8.107825]
+    fit: exponential
+  expect: loglin w
+  correct:
+  - {ok: true}
+  - num: {value: 3.0409, rel: 0.001, path: series.0.fit.params.A.value}
+  - num: {value: 0.49715, rel: 0.001, path: series.0.fit.params.B.value}
+  - eq: {series.0.fit.weighted: true}
+
+- id: pdata/pow
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [2.06, 5.543717, 10.496228, 15.52, 22.807893, 29.099938, 37.040518, 45.707382]
+    fit: power
+  expect: loglog
+  correct:
+  - {ok: true}
+  - num: {value: 2.0191, rel: 0.001, path: series.0.fit.params.A.value}
+  - num: {value: 1.49363, rel: 0.001, path: series.0.fit.params.B.value}
+  - eq: {series.0.fit.weighted: false}
+
+- id: pdata/log
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [1.1, 2.979442, 4.345837, 5.108883, 5.908314, 6.355278, 6.86773, 7.178325]
+    fit: log
+  expect: semilog
+  correct:
+  - {ok: true}
+  - num: {value: 2.97201, rel: 0.001, path: series.0.fit.params.a.value}
+  - num: {value: 1.04085, rel: 0.001, path: series.0.fit.params.b.value}
+  - eq: {series.0.fit.weighted: false}
+
+- id: pdata/outlier
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [3.3, 4.8, 7.1, 8.6, 16.25, 13.05, 14.85, 17.2]
+    fit: linear
+  expect: flag x=5
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [x = 5]
+  partial:
+  - {ok: true}
+  quick: true
+
+- id: pdata/exp_neg
+  input:
+    series:
+    - x: [1, 2, 3]
+      y: [1, -2, 3]
+    fit: exponential
+  expect: error
+  correct:
+  - error: [y > 0]
+  partial:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: pdata/two_pts
+  input:
+    series:
+    - x: [1, 2]
+      y: [3, 5]
+    fit: linear
+  expect: exact, warn
+  correct:
+  - {ok: true}
+  - num: {value: 2, rel: 1.0e-06, path: series.0.fit.params.a.value}
+  - num: {value: 1, rel: 1.0e-06, path: series.0.fit.params.b.value}
+  - has:
+      path: warnings
+      words: [2 points]
+  partial:
+  - {ok: true}
+  - num: {value: 2, rel: 1.0e-06, path: series.0.fit.params.a.value}
+  - num: {value: 1, rel: 1.0e-06, path: series.0.fit.params.b.value}
+
+- id: pdata/years_poly3
+  input:
+    series:
+    - x: [2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009, 2010]
+      y: [-0.74, 0.35, 1.24, 1.91, 2.5, 2.99, 3.52, 4.07, 4.78, 5.63, 6.76]
+    fit: poly3
+  expect: stable?
+  correct:
+  - {ok: true}
+  - num: {path: series.0.fit.r2, value: 0.99998, rel: 0.0001}
+  - num: {value: 0.01, rel: 0.001, path: series.0.fit.params.a.value}
+  note: the data is a cubic in (x - 2000); the fit must stay numerically stable with x around 2000 (r2 ~ 0.99998).
+
+- id: pdata/table_pm
+  input:
+    table: 't (s), d (m)
+
+      0, 0.00 ± 0.02
+
+      1, 4.9 ± 0.1
+
+      2, 19.6 ± 0.2
+
+      3, 44.2 ± 0.3
+
+      4, 78.3 ± 0.4'
+    x_column: t
+    y_columns: [d]
+    fit: poly2
+  expect: a~4.9
+  correct:
+  - {ok: true}
+  - num: {value: 4.896, rel: 0.002, path: series.0.fit.params.a.value}
+  - eq: {series.0.fit.weighted: true}
+  - eq: {series.0.n: 5}
+
+- id: pdata/table_comma_dec
+  input: {table: 'x;y
+
+      1,0;2,1
+
+      2,0;3,9
+
+      3,0;6,2', fit: linear}
+  expect: error or parse
+  correct:
+  - any:
+    - - {ok: true}
+      - eq: {series.0.n: 3}
+    - - error: []
+  partial:
+  - error: []
+  note: 'semicolon-separated table with decimal commas: parse it (n = 3) or fail with a clear error; an error that explains decimal commas would
+    be ideal.'
+
+- id: pdata/table_nan
+  input: {table: 'x,y
+
+      1,2
+
+      2,NaN
+
+      3,6
+
+      4,
+
+      5,10', fit: linear}
+  expect: skip rows
+  correct:
+  - {ok: true}
+  - num: {value: 2, rel: 1.0e-06, path: series.0.fit.params.a.value}
+  - eq: {series.0.fit.weighted: false}
+  - eq: {series.0.n: 3}
+  - has:
+      path: warnings
+      words: [skipped]
+  partial:
+  - {ok: true}
+  - num: {value: 2, rel: 1.0e-06, path: series.0.fit.params.a.value}
+  - eq: {series.0.fit.weighted: false}
+  - eq: {series.0.n: 3}
+
+- id: pdata/table_thousands
+  input: {table: 'x,y
+
+      1,1000
+
+      2,2000
+
+      3,3000', fit: linear}
+  expect: ok
+  correct:
+  - {ok: true}
+  - num: {value: 1000, rel: 1.0e-06, path: series.0.fit.params.a.value}
+  - eq: {series.0.fit.weighted: false}
+  - eq: {series.0.n: 3}
+
+- id: pdata/table_space_pm
+  input: {table: 'x y
+
+      1 2.0±0.1
+
+      2 4.1±0.1
+
+      3 5.9±0.1', fit: linear}
+  expect: pm without spaces
+  correct:
+  - {ok: true}
+  - num: {value: 1.95, rel: 0.001, path: series.0.fit.params.a.value}
+  - eq: {series.0.fit.weighted: true}
+  - eq: {series.0.n: 3}
+
+- id: pdata/zero_yerr
+  input:
+    series:
+    - x: [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+      y: [3.3, 4.8, 7.1, 8.6, 11.25, 13.05, 14.85, 17.2]
+      yerr: [0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.4, 0.2]
+    fit: linear
+  expect: unweighted warn
+  correct:
+  - {ok: true}
+  - num: {value: 2.0006, rel: 0.001, path: series.0.fit.params.a.value}
+  - eq: {series.0.fit.weighted: false}
+  - has:
+      path: warnings
+      words: [unweighted]
+  partial:
+  - {ok: true}
+  - num: {value: 2.0006, rel: 0.001, path: series.0.fit.params.a.value}
