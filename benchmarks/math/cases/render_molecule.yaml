@@ -1,0 +1,264 @@
+# render_molecule: 분자식·분자량·전하, 반응식 균형, SMILES 에러
+# 원본: benchmarks/raw/audit-2026-11-03.json(2026-11-03 감사). input·expect는 원본 그대로, correct/partial/severe는 기계 판정 조건.
+# 문법은 benchmarks/math/README.md. note는 사람의 기대를 고치거나 해석한 이유, known_issue는 아직 틀리는 원인 한 줄.
+
+tool: render_molecule
+cases:
+
+- id: mols/aspirin
+  input: {smiles: CC(=O)Oc1ccccc1C(=O)O}
+  expect: C9H8O4 180.159
+  correct:
+  - {ok: true}
+  - eq: {formula: C9H8O4}
+  - num: {path: mol_weight, value: 180.159, rel: 0, abs: 0.002}
+  quick: true
+
+- id: mols/caffeine
+  input: {smiles: Cn1cnc2c1c(=O)n(C)c(=O)n2C}
+  expect: C8H10N4O2 194.194
+  correct:
+  - {ok: true}
+  - eq: {formula: C8H10N4O2}
+  - num: {path: mol_weight, value: 194.194, rel: 0, abs: 0.002}
+
+- id: mols/glucose
+  input: {smiles: 'OC[C@H]1OC(O)[C@H](O)[C@@H](O)[C@@H]1O'}
+  expect: C6H12O6 180.156
+  correct:
+  - {ok: true}
+  - eq: {formula: C6H12O6}
+  - num: {path: mol_weight, value: 180.156, rel: 0, abs: 0.002}
+
+- id: mols/benzene
+  input: {smiles: c1ccccc1}
+  expect: C6H6 78.114
+  correct:
+  - {ok: true}
+  - eq: {formula: C6H6}
+  - num: {path: mol_weight, value: 78.114, rel: 0, abs: 0.002}
+
+- id: mols/acetate
+  input: {smiles: 'CC(=O)[O-]'}
+  expect: C2H3O2- 59.044, charge -1
+  correct:
+  - {ok: true}
+  - eq: {formula: C2H3O2-}
+  - num: {path: mol_weight, value: 59.044, rel: 0, abs: 0.002}
+  - eq: {charge: -1}
+
+- id: mols/ammonium
+  input: {smiles: '[NH4+]'}
+  expect: H4N+ 18.039
+  correct:
+  - {ok: true}
+  - eq: {formula: H4N+}
+  - num: {path: mol_weight, value: 18.039, rel: 0, abs: 0.002}
+  - eq: {charge: 1}
+
+- id: mols/d2o
+  input: {smiles: '[2H]O[2H]'}
+  expect: D2O 20.028
+  correct:
+  - {ok: true}
+  - in:
+      formula: [D2O, '[2H]2O']
+  - num: {path: mol_weight, value: 20.027, rel: 0, abs: 0.002}
+  partial:
+  - {ok: true}
+  - eq: {formula: H2O}
+  - num: {path: mol_weight, value: 20.027, rel: 0, abs: 0.002}
+  note: D2O weighs 2*2.0141 + 15.999 = 20.027 (expect said 20.028, a rounding slip). The formula should keep the isotope label; plain H2O with
+    the right weight is partial.
+  known_issue: formula drops the isotope label (H2O for D2O); the weight 20.027 is right.
+
+- id: mols/c13
+  input: {smiles: '[13CH4]'}
+  expect: CH4 17.035 (13C)
+  correct:
+  - {ok: true}
+  - in:
+      formula: ['[13C]H4', 13CH4, '[13CH4]']
+  - num: {path: mol_weight, value: 17.035, rel: 0, abs: 0.002}
+  partial:
+  - {ok: true}
+  - eq: {formula: CH4}
+  - num: {path: mol_weight, value: 17.035, rel: 0, abs: 0.002}
+  note: 'Same rule as mols/d2o: an isotope-labelled formula is correct, plain CH4 with the right weight 17.035 is partial.'
+  known_issue: formula drops the isotope label (CH4 for 13CH4); the weight 17.035 is right.
+
+- id: mols/h2
+  input: {smiles: '[H][H]'}
+  expect: H2 2.016
+  correct:
+  - {ok: true}
+  - eq: {formula: H2}
+  - num: {path: mol_weight, value: 2.016, rel: 0, abs: 0.002}
+  quick: true
+
+- id: mols/hplus
+  input: {smiles: '[H+]'}
+  expect: H+ 1.007
+  correct:
+  - {ok: true}
+  - eq: {formula: H+}
+  - num: {path: mol_weight, value: 1.007, rel: 0, abs: 0.002}
+  - eq: {charge: 1}
+  note: Average molecular weight ignores the electron mass (RDKit convention), so +-0.002 tolerance.
+
+- id: mols/hydride
+  input: {smiles: '[H-]'}
+  expect: H- 1.009
+  correct:
+  - {ok: true}
+  - eq: {formula: H-}
+  - num: {path: mol_weight, value: 1.009, rel: 0, abs: 0.002}
+  - eq: {charge: -1}
+  note: Average molecular weight ignores the electron mass (RDKit convention), so +-0.002 tolerance.
+
+- id: mols/d2
+  input: {smiles: '[2H][2H]'}
+  expect: D2 4.028
+  correct:
+  - {ok: true}
+  - in:
+      formula: [D2, '[2H]2']
+  - num: {path: mol_weight, value: 4.028, rel: 0, abs: 0.002}
+  partial:
+  - {ok: true}
+  - eq: {formula: H2}
+  - num: {path: mol_weight, value: 4.028, rel: 0, abs: 0.002}
+  known_issue: formula drops the isotope label (H2 for D2); the weight 4.028 is right.
+
+- id: mols/hcl
+  input: {smiles: Cl}
+  expect: HCl 36.461
+  correct:
+  - {ok: true}
+  - eq: {formula: HCl}
+  - num: {path: mol_weight, value: 36.461, rel: 0, abs: 0.002}
+
+- id: mols/nacl
+  input: {smiles: '[Na+].[Cl-]'}
+  expect: ClNa 58.443
+  correct:
+  - {ok: true}
+  - eq: {formula: ClNa}
+  - num: {path: mol_weight, value: 58.443, rel: 0, abs: 0.002}
+
+- id: mols/ethanol_numbers
+  input: {smiles: CCO, show_atom_numbers: true}
+  expect: C2H6O
+  correct:
+  - {ok: true}
+  - eq: {formula: C2H6O}
+  - num: {path: mol_weight, value: 46.069, rel: 0, abs: 0.002}
+
+- id: mols/bad_valence
+  input: {smiles: CC(C)(C)(C)C}
+  expect: error at atom 2
+  correct:
+  - error: ['#2', valence]
+  partial:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: mols/bad_ring
+  input: {smiles: c1cccc1}
+  expect: kekulize error
+  correct:
+  - error: [kekulize]
+  partial:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: mols/pyrrole_bad
+  input: {smiles: c1ccnc1}
+  expect: needs [nH]
+  correct:
+  - error: ['[nH]']
+  partial:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: mols/unclosed
+  input: {smiles: C1CCC}
+  expect: unclosed ring
+  correct:
+  - error: [ring]
+  partial:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: mols/rxn_h2
+  input: {smiles: '[H][H].O=O>>O'}
+  expect: unbalanced warn
+  correct:
+  - {ok: true}
+  - eq: {kind: reaction, balanced: false}
+  - has:
+      path: warnings
+      words: [not balanced]
+  severe:
+  - eq: {balanced: true}
+  quick: true
+
+- id: mols/rxn_ethene
+  input: {smiles: 'C=C.[H][H]>>CC'}
+  expect: balanced
+  correct:
+  - {ok: true}
+  - eq: {kind: reaction, balanced: true}
+
+- id: mols/rxn_ester
+  input: {smiles: CCO.CC(=O)O>OS(=O)(=O)O>CCOC(C)=O.O}
+  expect: balanced
+  correct:
+  - {ok: true}
+  - eq: {kind: reaction, balanced: true}
+  - eq: {products.0.formula: C4H8O2}
+
+- id: mols/rxn_combust
+  input: {smiles: C.O=O.O=O>>O=C=O.O.O}
+  expect: balanced
+  correct:
+  - {ok: true}
+  - eq: {kind: reaction, balanced: true}
+
+- id: mols/rxn_hcl_naoh
+  input: {smiles: 'Cl.[Na+].[OH-]>>[Na+].[Cl-].O'}
+  expect: balanced
+  correct:
+  - {ok: true}
+  - eq: {kind: reaction, balanced: true}
+
+- id: mols/cis_trans
+  input: {smiles: C/C=C\C}
+  expect: cis-2-butene C4H8
+  correct:
+  - {ok: true}
+  - eq: {formula: C4H8}
+  - num: {path: mol_weight, value: 56.108, rel: 0, abs: 0.002}
+  - has:
+      path: canonical_smiles
+      words: [/C=C\]
+
+- id: mols/name_not_smiles
+  input: {smiles: aspirin}
+  expect: 'error: not SMILES'
+  correct:
+  - error: [SMILES]
+  severe:
+  - {ok: true}
+
+- id: mols/legend_ko
+  input: {smiles: CCO, legend: 에탄올}
+  expect: legend ok
+  correct:
+  - {ok: true}
+  - eq: {formula: C2H6O}
+  - num: {path: mol_weight, value: 46.069, rel: 0, abs: 0.002}

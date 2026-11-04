@@ -37,6 +37,23 @@ npx @modelcontextprotocol/inspector uv run openstem-mcp
 
 PR을 열면 `.github/PULL_REQUEST_TEMPLATE.md`의 확인 목록이 채워진다. 버그와 학교 LMS 확인 결과는 이슈 양식(버그 보고, 학교 LMS 확인 보고)으로 받는다. 토큰·캘린더 주소는 넣지 않는다.
 
+## 벤치마크 돌리기
+
+계산 툴(`verify_math`, `check_units`, `plot_function`, `render_molecule`, `plot_data`)의 정확도를 2026-11-03 감사 사례 414개로 잰다. TeX는 필요 없다.
+
+```bash
+uv run python scripts/bench.py                          # 전체(약 3분), Markdown 보고서를 표준 출력으로
+uv run python scripts/bench.py --tool check_units       # 툴 하나
+uv run python scripts/bench.py --only v_equal/,units/dB # id 또는 id 앞부분(쉼표로 여러 개)
+uv run python scripts/bench.py --json out.json          # 사례별 결과·출력·실패 이유
+uv run python scripts/bench.py --source audit           # 0.3.2 감사 결과를 같은 기준으로 채점(비교용)
+```
+
+- 결과물은 임시 폴더에 쓰고 재현 기록은 남기지 않는다(`OPENSTEM_OUTPUT_DIR`, `OPENSTEM_RECORD=0`을 스크립트가 정한다).
+- `uv run pytest`는 `quick` 사례만 돌린다(약 20초). 전체는 `OPENSTEM_BENCH=1 uv run pytest tests/test_benchmark.py`. [기준선](benchmarks/math/BASELINE.md)보다 판정이 나빠지면 실패하고, 아직 틀리는 사례는 이유와 함께 xfail로 보인다.
+- 툴을 고쳐 판정이 좋아지거나 일부러 바뀌면 `uv run python scripts/bench.py --save-baseline`으로 `benchmarks/math/baseline.json`을 다시 쓰고 `BASELINE.md`의 표를 고친다.
+- 사례 형식과 판정 조건은 [benchmarks/math/README.md](benchmarks/math/README.md), 다른 서비스와 과제로 비교하는 절차는 [docs/benchmarks.md](docs/benchmarks.md). GitHub Actions의 `Benchmark` 워크플로(손으로 실행 또는 매주)가 전체를 돌려 요약을 job summary에, JSON을 artifact로 남긴다. 배포를 막지는 않는다.
+
 ## 툴을 추가하거나 바꿀 때
 
 - 툴 구현은 MCP를 모르고 `ToolResult`만 돌려준다. 등록은 `src/openstem/server.py`에서 한다([결정 0002](docs/decisions/0002-tool-result-contract.md)).

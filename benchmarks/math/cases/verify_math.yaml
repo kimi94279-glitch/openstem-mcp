@@ -1,0 +1,2868 @@
+# verify_math: 풀이 검산(equal, solve, ode, laplace, matrix, probability, series, sum, integrate, limit, diff, evaluate)
+# 원본: benchmarks/raw/audit-2026-11-03.json(2026-11-03 감사). input·expect는 원본 그대로, correct/partial/severe는 기계 판정 조건.
+# 문법은 benchmarks/math/README.md. note는 사람의 기대를 고치거나 해석한 이유, known_issue는 아직 틀리는 원인 한 줄.
+
+tool: verify_math
+cases:
+
+- id: v_adv/s_log2
+  input: {op: solve, expr: log(x - 2) + log(x + 1) = 2*log(2)}
+  expect: 3 only (x=-2 extraneous)
+  correct:
+  - {ok: true}
+  - solutions: ['3']
+  partial:
+  - {ok: true}
+  - solutions_include: ['3']
+  severe:
+  - solutions_include: ['-2']
+  quick: true
+
+- id: v_adv/s_log10
+  input: {op: solve, expr: log10(x) + log10(x + 3) = 1}
+  expect: 2 only (x=-5 extraneous)
+  correct:
+  - {ok: true}
+  - solutions: ['2']
+  severe:
+  - solutions_include: ['-5']
+
+- id: v_adv/s_ln_pair
+  input: {op: solve, expr: log(x - 1) + log(x + 1) = log(3)}
+  expect: 2 only
+  correct:
+  - {ok: true}
+  - solutions: ['2']
+  severe:
+  - solutions_include: ['-2']
+
+- id: v_adv/s_log_pos
+  input: {op: solve, expr: log(x) + log(x - 3) = log(10), assume: positive}
+  expect: '5'
+  correct:
+  - {ok: true}
+  - solutions: ['5']
+
+- id: v_adv/s_log_diff
+  input: {op: solve, expr: log(x) - log(x - 1) = log(2)}
+  expect: '2'
+  correct:
+  - {ok: true}
+  - solutions: ['2']
+
+- id: v_adv/s_sqrt2
+  input: {op: solve, expr: sqrt(2*x + 3) = x}
+  expect: 3 only
+  correct:
+  - {ok: true}
+  - solutions: ['3']
+  severe:
+  - solutions_include: ['-1']
+
+- id: v_adv/s_exp4
+  input: {op: solve, expr: 4**x - 3*2**x + 2 = 0}
+  expect: 0, 1
+  correct:
+  - {ok: true}
+  - solutions: ['0', '1']
+
+- id: v_adv/s_logb
+  input: {op: solve, expr: 'log(x, 2) = 3'}
+  expect: '8'
+  correct:
+  - {ok: true}
+  - solutions: ['8']
+
+- id: v_adv/eq_latex_cbrt
+  input: {op: equal, expr: '\sqrt[3]{-8}', against: '-2', latex: true}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  severe:
+  - eq: {matches: false}
+  quick: true
+
+- id: v_adv/eq_cbrt_pow
+  input: {op: equal, expr: (-8)**(1/3), against: '-2'}
+  expect: true in real-number convention
+  correct:
+  - {ok: true}
+  - any:
+    - - eq: {matches: true}
+    - - eq: {matches: false}
+      - has: [cbrt]
+  partial:
+  - {ok: true}
+  - in:
+      matches: [false, unknown]
+  note: expect 'true in real-number convention'. principal-root convention (x**(1/3) of a negative base is complex) is a documented design choice;
+    a principal-consistent answer that points to cbrt() counts as correct, a silent one as partial.
+  known_issue: 'principal root: (-8)**(1/3) != -2; says only ''different domains'', no pointer to cbrt().'
+
+- id: v_adv/ode_exp
+  input: {op: ode, expr: y' = y}
+  expect: C1 e^x
+  correct:
+  - {ok: true}
+  - expr:
+      equals: C1*exp(x)
+      consts: [C1]
+
+- id: v_adv/ode_sin_ics
+  input: {op: ode, expr: y'' + y = 0, ics: 'y(0)=0, y''(0)=1'}
+  expect: sin(x)
+  correct:
+  - {ok: true}
+  - expr: {equals: sin(x)}
+
+- id: v_adv/ode_forced
+  input: {op: ode, expr: y'' + 3*y' + 2*y = sin(x)}
+  expect: C1e^-2x + C2e^-x + (sin x - 3cos x)/10
+  correct:
+  - {ok: true}
+  - expr:
+      equals: C1*exp(-2*x) + C2*exp(-x) + (sin(x) - 3*cos(x))/10
+      consts: [C1, C2]
+
+- id: v_adv/ode_first_lin
+  input: {op: ode, expr: y' + 2*y = 4, ics: y(0)=0}
+  expect: 2 - 2e^-2x
+  correct:
+  - {ok: true}
+  - expr: {equals: 2 - 2*exp(-2*x)}
+
+- id: v_adv/ode_against_wrong_ic
+  input: {op: ode, expr: y'' + y = 0, ics: 'y(0)=0, y''(0)=1', against: cos(x)}
+  expect: satisfies_ode true, ics false
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  - eq: {against.satisfies_ode: true, against.satisfies_ics: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: false}
+  severe:
+  - eq: {matches: true}
+  quick: true
+
+- id: v_adv/ode_against_general
+  input: {op: ode, expr: y'' - y = 0, against: C1*exp(x) + C2*exp(-x)}
+  expect: matches true
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  severe:
+  - eq: {matches: false}
+
+- id: v_adv/ode_against_wrong
+  input: {op: ode, expr: y'' - y = 0, against: C1*exp(x) + C2*exp(2*x)}
+  expect: matches false
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  severe:
+  - eq: {matches: true}
+
+- id: v_adv/ode_sep_ics
+  input: {op: ode, expr: y' = y**2, ics: y(0)=1}
+  expect: 1/(1-x)
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/(1 - x)}
+
+- id: v_adv/ode_implicit
+  input: {op: ode, expr: y' = x/y}
+  expect: y=±sqrt(C1+x^2)
+  correct:
+  - {ok: true}
+  - solutions: [sqrt(C1 + x**2), -sqrt(C1 + x**2)]
+
+- id: v_adv/ode_resonance
+  input: {op: ode, expr: y'' + 4*y = cos(2*x)}
+  expect: C1 sin2x + C2 cos2x + x sin(2x)/4
+  correct:
+  - {ok: true}
+  - expr:
+      equals: C1*sin(2*x) + C2*cos(2*x) + x*sin(2*x)/4
+      consts: [C1, C2]
+
+- id: v_adv/ode_euler
+  input: {op: ode, expr: x**2*y'' - 2*x*y' + 2*y = 0}
+  expect: C1 x + C2 x^2
+  correct:
+  - {ok: true}
+  - expr:
+      equals: C1*x + C2*x**2
+      consts: [C1, C2]
+
+- id: v_adv/ode_t
+  input: {op: ode, expr: x'' + x = 0}
+  expect: 'in t: C1 sin t + C2 cos t'
+  correct:
+  - {ok: true}
+  - expr:
+      equals: C1*sin(t) + C2*cos(t)
+      consts: [C1, C2]
+
+- id: v_adv/ode_logistic
+  input: {op: ode, expr: y' = y*(1 - y)}
+  expect: 1/(1 + C e^-x)
+  correct:
+  - {ok: true}
+  - expr:
+      equals: 1/(1 + C1*exp(-x))
+      consts: [C1]
+
+- id: v_adv/ode_rc
+  input: {op: ode, expr: R*C*v' + v = V0, var: t, assume: positive}
+  expect: V0 + C1 e^{-t/RC}
+  correct:
+  - {ok: true}
+  - expr:
+      equals: V0 + C1*exp(-t/(R*C))
+      consts: [C1]
+
+- id: v_adv/ode_against_particular
+  input: {op: ode, expr: y'' + y = x, against: x}
+  expect: x is particular solution
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  - has: [particular]
+  partial:
+  - {ok: true}
+  - eq: {matches: true}
+  severe:
+  - eq: {matches: false}
+
+- id: v_adv/lap_t
+  input: {op: laplace, expr: t}
+  expect: 1/s^2
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/s**2}
+
+- id: v_adv/lap_exp
+  input: {op: laplace, expr: exp(-a*t)}
+  expect: 1/(s+a)
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/(s + a)}
+
+- id: v_adv/lap_sin
+  input: {op: laplace, expr: sin(w*t)}
+  expect: w/(s^2+w^2)
+  correct:
+  - {ok: true}
+  - expr: {equals: w/(s**2 + w**2)}
+
+- id: v_adv/lap_step
+  input: {op: laplace, expr: Heaviside(t - 1)}
+  expect: e^-s/s
+  correct:
+  - {ok: true}
+  - expr: {equals: exp(-s)/s}
+
+- id: v_adv/lap_texp
+  input: {op: laplace, expr: t*exp(t)}
+  expect: 1/(s-1)^2
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/(s - 1)**2}
+
+- id: v_adv/lap_tsin
+  input: {op: laplace, expr: t*sin(t)}
+  expect: 2s/(s^2+1)^2
+  correct:
+  - {ok: true}
+  - expr: {equals: 2*s/(s**2 + 1)**2}
+
+- id: v_adv/lap_one
+  input: {op: laplace, expr: '1'}
+  expect: 1/s
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/s}
+
+- id: v_adv/lap_exp_t2
+  input: {op: laplace, expr: exp(t**2)}
+  expect: no transform
+  correct:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: v_adv/lap_1_t
+  input: {op: laplace, expr: 1/t}
+  expect: no transform (diverges)
+  correct:
+  - error: []
+  severe:
+  - {ok: true}
+
+- id: v_adv/ilap_1
+  input: {op: inverse_laplace, expr: 1/(s*(s + 1))}
+  expect: 1 - e^-t
+  correct:
+  - {ok: true}
+  - expr: {equals: 1 - exp(-t)}
+
+- id: v_adv/ilap_cos
+  input: {op: inverse_laplace, expr: s/(s**2 + 4)}
+  expect: cos 2t
+  correct:
+  - {ok: true}
+  - expr: {equals: cos(2*t)}
+
+- id: v_adv/ilap_shift
+  input: {op: inverse_laplace, expr: exp(-2*s)/s}
+  expect: Heaviside(t-2)
+  correct:
+  - {ok: true}
+  - expr: {equals: Heaviside(t - 2)}
+
+- id: v_adv/ilap_damped
+  input: {op: inverse_laplace, expr: 1/(s**2 + 2*s + 5)}
+  expect: e^-t sin(2t)/2
+  correct:
+  - {ok: true}
+  - expr: {equals: exp(-t)*sin(2*t)/2}
+
+- id: v_adv/ilap_delta
+  input: {op: inverse_laplace, expr: '1'}
+  expect: DiracDelta(t)
+  correct:
+  - {ok: true}
+  - expr: {equals: DiracDelta(t)}
+
+- id: v_adv/ilap_improper
+  input: {op: inverse_laplace, expr: s/(s - 1)}
+  expect: delta + e^t
+  correct:
+  - {ok: true}
+  - expr: {equals: DiracDelta(t) + exp(t)}
+
+- id: v_adv/m_2x2
+  input:
+    op: matrix
+    matrix:
+    - ['1', '2']
+    - ['3', '4']
+  expect: det -2, inv [[-2,1],[3/2,-1/2]], eig (5±sqrt33)/2
+  correct:
+  - {ok: true}
+  - expr: {equals: '-2', path: det.result}
+  - eq: {rank: 2}
+  - eq:
+      inverse.result:
+      - ['-2', '1']
+      - [3/2, -1/2]
+  - set:
+      path: eigen.values
+      items: [(5 - sqrt(33))/2, (5 + sqrt(33))/2]
+  quick: true
+
+- id: v_adv/m_singular
+  input:
+    op: matrix
+    matrix:
+    - ['1', '2']
+    - ['2', '4']
+  expect: det 0, rank 1, no inverse
+  correct:
+  - {ok: true}
+  - expr: {equals: '0', path: det.result}
+  - eq: {rank: 1}
+  - missing: [inverse]
+
+- id: v_adv/m_jordan
+  input:
+    op: matrix
+    matrix:
+    - ['1', '1']
+    - ['0', '1']
+  expect: eig 1 mult 2, 1 vector, not diagonalizable
+  correct:
+  - {ok: true}
+  - set:
+      path: eigen.values
+      items: ['1']
+  - eq: {eigen.values.0.multiplicity: 2, eigen.diagonalizable: false}
+  - len: {eigen.values.0.vectors: 1}
+
+- id: v_adv/m_rot
+  input:
+    op: matrix
+    matrix:
+    - ['0', '-1']
+    - ['1', '0']
+  expect: eig ±i
+  correct:
+  - {ok: true}
+  - set:
+      path: eigen.values
+      items: [I, -I]
+
+- id: v_adv/m_3x3
+  input:
+    op: matrix
+    matrix:
+    - ['2', '0', '0']
+    - ['0', '3', '4']
+    - ['0', '4', '9']
+  expect: det 22, eig 1,2,11
+  correct:
+  - {ok: true}
+  - expr: {equals: '22', path: det.result}
+  - set:
+      path: eigen.values
+      items: ['1', '2', '11']
+
+- id: v_adv/m_prod
+  input:
+    op: matrix
+    matrix:
+    - ['1', '2']
+    - ['3', '4']
+    matrix_b:
+    - ['0', '1']
+    - ['1', '0']
+  expect: '[[2,1],[4,3]]'
+  correct:
+  - {ok: true}
+  - eq:
+      product.result:
+      - ['2', '1']
+      - ['4', '3']
+
+- id: v_adv/m_float
+  input:
+    op: matrix
+    matrix:
+    - [0.1, 0.2]
+    - [0.3, 0.4]
+  expect: det -0.02
+  correct:
+  - {ok: true}
+  - num: {value: -0.02, rel: 1.0e-09, path: det.result}
+
+- id: v_adv/m_rank_def3
+  input:
+    op: matrix
+    matrix:
+    - ['1', '2', '3']
+    - ['4', '5', '6']
+    - ['7', '8', '9']
+  expect: det 0 rank 2
+  correct:
+  - {ok: true}
+  - expr: {equals: '0', path: det.result}
+  - eq: {rank: 2}
+
+- id: v_adv/m_sym
+  input:
+    op: matrix
+    matrix:
+    - [a, '1']
+    - ['1', a]
+  expect: det a^2-1, eig a±1
+  correct:
+  - {ok: true}
+  - expr: {equals: a**2 - 1, path: det.result}
+  - set:
+      path: eigen.values
+      items: [a - 1, a + 1]
+
+- id: v_adv/p_norm196
+  input: {op: probability, dist: 'Normal(0, 1)', expr: X > 1.96}
+  expect: '0.0249979'
+  correct:
+  - {ok: true}
+  - num: {value: 0.0249979, rel: 0.0001}
+
+- id: v_adv/p_binom5
+  input: {op: probability, dist: 'Binomial(10, 0.5)', expr: X = 5}
+  expect: 63/256=0.24609
+  correct:
+  - {ok: true}
+  - expr: {equals: 63/256}
+
+- id: v_adv/p_pois
+  input: {op: probability, dist: Poisson(3), expr: X <= 2}
+  expect: 8.5 e^-3 = 0.42319
+  correct:
+  - {ok: true}
+  - num: {value: 0.42319, rel: 0.0001}
+
+- id: v_adv/p_expo
+  input: {op: probability, dist: Exponential(2), expr: X > 1}
+  expect: e^-2 = 0.135335
+  correct:
+  - {ok: true}
+  - expr: {equals: exp(-2)}
+
+- id: v_adv/p_unif
+  input: {op: probability, dist: 'Uniform(0, 2)', expr: X < 0.5}
+  expect: '0.25'
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/4}
+
+- id: v_adv/p_iq
+  input: {op: probability, dist: 'Normal(100, 15)', expr: X < 130}
+  expect: '0.97725'
+  correct:
+  - {ok: true}
+  - num: {value: 0.97725, rel: 0.0001}
+
+- id: v_adv/p_e_x2
+  input: {op: probability, dist: 'Normal(0, 1)', expr: X**2}
+  expect: '1'
+  correct:
+  - {ok: true}
+  - expr: {equals: '1'}
+
+- id: v_adv/p_binom_mv
+  input: {op: probability, dist: 'Binomial(10, 0.3)', expr: ''}
+  expect: mean 3 var 2.1
+  correct:
+  - {ok: true}
+  - expr: {equals: '3', path: mean}
+  - expr: {equals: 21/10, path: variance}
+
+- id: v_adv/p_norm_pm1
+  input: {op: probability, dist: 'Normal(0, 1)', expr: -1 < X < 1}
+  expect: '0.682689'
+  correct:
+  - {ok: true}
+  - num: {value: 0.682689, rel: 0.0001}
+
+- id: v_adv/p_abs
+  input: {op: probability, dist: 'Normal(0, 1)', expr: abs(X) < 1.96}
+  expect: '0.950004'
+  correct:
+  - {ok: true}
+  - num: {value: 0.950004, rel: 0.0001}
+  known_issue: 'abs(X) inside the event is not supported: ''could not compute the probability of this event'' (refuses, no wrong value).'
+  quick: true
+
+- id: v_adv/p_pois_frac
+  input: {op: probability, dist: Poisson(3), expr: X > 2.5}
+  expect: P(X>=3)=0.57681
+  correct:
+  - {ok: true}
+  - num: {value: 0.57681, rel: 0.0001}
+
+- id: v_adv/p_binom_frac
+  input: {op: probability, dist: 'Binomial(5, 0.5)', expr: X = 2.5}
+  expect: '0'
+  correct:
+  - {ok: true}
+  - expr: {equals: '0'}
+
+- id: v_adv/p_cont_point
+  input: {op: probability, dist: 'Normal(0, 1)', expr: X = 1}
+  expect: '0'
+  correct:
+  - {ok: true}
+  - expr: {equals: '0'}
+
+- id: v_adv/p_unif_e
+  input: {op: probability, dist: 'Uniform(0, 1)', expr: X**2}
+  expect: 1/3
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/3}
+
+- id: v_adv/p_binom_ge1
+  input: {op: probability, dist: 'Binomial(20, 0.05)', expr: X >= 1}
+  expect: 1-0.95^20=0.641514
+  correct:
+  - {ok: true}
+  - num: {value: 0.641514, rel: 0.0001}
+
+- id: v_adv/p_norm_var
+  input: {op: probability, dist: 'Normal(0, 4)', expr: X < 2}
+  expect: 'std=4 -> Phi(0.5)=0.6915 (if variance: 0.8413)'
+  correct:
+  - {ok: true}
+  - num: {value: 0.691462, rel: 0.0001}
+  severe:
+  - num: {value: 0.841345, rel: 0.0001}
+  note: Normal(mu, sigma) takes the standard deviation (sympy convention), so P(X<2)=Phi(0.5); 0.8413 would mean the second argument was read
+    as a variance.
+
+- id: v_adv/p_two_sided_or
+  input: {op: probability, dist: 'Normal(0, 1)', expr: X > 1 ; X < -1}
+  expect: error or OR?
+  correct:
+  - any:
+    - - error: []
+    - - {ok: true}
+      - num: {value: 0.317311, rel: 0.0001}
+  note: 'expect ''error or OR?'': '';'' is not an event operator, so a clear error is right; computing P(|X|>1)=0.3173 is also right.'
+
+- id: v_alg/atan_recip_sign
+  input: {op: equal, expr: atan(x) + atan(1/x), against: pi/2*sign(x)}
+  expect: true for real x!=0
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  note: true for real x != 0 (both sides undefined/0 at x=0 aside).
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_alg/gudermann
+  input: {op: equal, expr: atan(sinh(x)), against: asin(tanh(x))}
+  expect: true on reals
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_alg/half_angle_abs
+  input: {op: equal, expr: sqrt((1 - cos(x))/2), against: abs(sin(x/2))}
+  expect: true on reals
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_alg/sqrt_sq_shift
+  input: {op: equal, expr: sqrt(x**2 + 2*x + 1), against: abs(x + 1)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_alg/asin_acos
+  input: {op: equal, expr: asin(x) + acos(x), against: pi/2}
+  expect: true on [-1,1]
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  note: true on the common real domain [-1, 1].
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_alg/s_quad
+  input: {op: solve, expr: x**2 = 4}
+  expect: -2, 2
+  correct:
+  - {ok: true}
+  - solutions: ['-2', '2']
+
+- id: v_alg/s_noreal
+  input: {op: solve, expr: x**2 = -1}
+  expect: none real; complex ±i
+  correct:
+  - {ok: true}
+  - len: {solutions: 0}
+  - set:
+      path: complex_solutions
+      items: [I, -I]
+  partial:
+  - {ok: true}
+  - len: {solutions: 0}
+  severe:
+  - solutions_include: ['1']
+
+- id: v_alg/s_sinhalf
+  input: {op: solve, expr: sin(x) = 1/2}
+  expect: pi/6+2npi, 5pi/6+2npi
+  correct:
+  - {ok: true}
+  - solutions_include: [pi/6, 5*pi/6]
+  - has:
+      path: general.result
+      words: [pi/6, 5*pi/6, _n]
+  partial:
+  - {ok: true}
+  - solutions_include: [pi/6, 5*pi/6]
+
+- id: v_alg/s_cubic
+  input: {op: solve, expr: x**3 - x = 0}
+  expect: -1,0,1
+  correct:
+  - {ok: true}
+  - solutions: ['-1', '0', '1']
+
+- id: v_alg/s_exp_neg
+  input: {op: solve, expr: exp(x) = -1}
+  expect: none
+  correct:
+  - {ok: true}
+  - len: {solutions: 0}
+
+- id: v_alg/s_xx2
+  input: {op: solve, expr: x**x = 2}
+  expect: ~1.5596
+  correct:
+  - {ok: true}
+  - solutions:
+      items: ['1.559610469']
+
+- id: v_alg/s_extraneous_sqrt
+  input: {op: solve, expr: sqrt(x + 2) = x}
+  expect: 2 only
+  correct:
+  - {ok: true}
+  - solutions: ['2']
+  severe:
+  - solutions_include: ['-1']
+
+- id: v_alg/s_abs
+  input: {op: solve, expr: abs(x - 1) = 2}
+  expect: -1, 3
+  correct:
+  - {ok: true}
+  - solutions: ['-1', '3']
+
+- id: v_alg/s_log_extraneous
+  input: {op: solve, expr: log(x) + log(x - 3) = log(10)}
+  expect: 5 only
+  correct:
+  - {ok: true}
+  - solutions: ['5']
+  partial:
+  - {ok: true}
+  - solutions_include: ['5']
+  severe:
+  - solutions_include: ['-2']
+  quick: true
+
+- id: v_alg/s_x_over_x
+  input: {op: solve, expr: x/x = 1}
+  expect: all reals except 0
+  correct:
+  - {ok: true}
+  - eq: {result: '(-oo, 0) ∪ (0, oo)'}
+  partial:
+  - {ok: true}
+  - eq: {result: '(-oo, oo)'}
+  quick: true
+
+- id: v_alg/s_removable
+  input: {op: solve, expr: (x**2 - 1)/(x - 1) = 2}
+  expect: no solution
+  correct:
+  - {ok: true}
+  - len: {solutions: 0}
+  severe:
+  - solutions_include: ['1']
+
+- id: v_alg/s_cbrt_neg
+  input: {op: solve, expr: x**(1/3) = -2}
+  expect: x=-8 (real cube root)
+  correct:
+  - {ok: true}
+  - any:
+    - - solutions: ['-8']
+    - - len: {solutions: 0}
+      - has: [cbrt]
+  partial:
+  - {ok: true}
+  - len: {solutions: 0}
+  - has: ['-8']
+  note: expect 'x=-8 (real cube root)'. principal-root convention (x**(1/3) of a negative base is complex) is a documented design choice; a principal-consistent
+    answer that points to cbrt() counts as correct, a silent one as partial.
+  known_issue: principal root drops x=-8 with a note, but the note does not point to cbrt() for the real root.
+
+- id: v_alg/s_cbrt_fn
+  input: {op: solve, expr: cbrt(x) = -2}
+  expect: '-8'
+  correct:
+  - {ok: true}
+  - solutions: ['-8']
+
+- id: v_alg/s_quintic
+  input: {op: solve, expr: x**5 - x + 1 = 0}
+  expect: ~-1.1673
+  correct:
+  - {ok: true}
+  - solutions:
+      items: ['-1.167303978']
+
+- id: v_alg/s_tan
+  input: {op: solve, expr: tan(x) = 1}
+  expect: pi/4 + n pi
+  correct:
+  - {ok: true}
+  - solutions_include: [pi/4, 5*pi/4, -3*pi/4]
+  - has:
+      path: general.result
+      words: [pi/4, _n]
+  partial:
+  - {ok: true}
+  - solutions_include: [pi/4]
+
+- id: v_alg/s_expx_x
+  input: {op: solve, expr: exp(x) = x}
+  expect: no real solution
+  correct:
+  - {ok: true}
+  - len: {solutions: 0}
+
+- id: v_alg/s_sys
+  input: {op: solve, expr: x + y = 3; x - y = 1}
+  expect: x=2,y=1
+  correct:
+  - {ok: true}
+  - solutions:
+    - {x: '2', y: '1'}
+
+- id: v_alg/s_sys_inf
+  input: {op: solve, expr: x + y = 1; 2*x + 2*y = 2, var: 'x, y'}
+  expect: infinitely many
+  correct:
+  - {ok: true}
+  - any:
+    - - solutions:
+        - {x: 1 - y}
+    - - solutions:
+        - {y: 1 - x}
+    - - has: [infinite]
+
+- id: v_alg/s_sys_none
+  input: {op: solve, expr: x + y = 1; x + y = 2, var: 'x, y'}
+  expect: none
+  correct:
+  - {ok: true}
+  - len: {solutions: 0}
+
+- id: v_alg/s_sys_nonlin
+  input: {op: solve, expr: x**2 + y**2 = 1; x - y = 0}
+  expect: ±(sqrt2/2, sqrt2/2)
+  correct:
+  - {ok: true}
+  - solutions:
+    - {x: sqrt(2)/2, y: sqrt(2)/2}
+    - {x: -sqrt(2)/2, y: -sqrt(2)/2}
+
+- id: v_alg/s_sys_param
+  input: {op: solve, expr: a*x + y = 1; x + y = 2, var: 'x, y'}
+  expect: x=1/(1-a)... (a!=1)
+  correct:
+  - {ok: true}
+  - solutions:
+    - {x: 1/(1 - a), y: (2*a - 1)/(a - 1)}
+
+- id: v_alg/s_formula
+  input: {op: solve, expr: T = 2*pi*sqrt(L/g), var: L}
+  expect: L = g T^2/(4 pi^2)
+  correct:
+  - {ok: true}
+  - solutions: [g*T**2/(4*pi**2)]
+
+- id: v_alg/s_formula_pos
+  input: {op: solve, expr: T = 2*pi*sqrt(L/g), var: L, assume: positive}
+  expect: L = g T^2/(4 pi^2)
+  correct:
+  - {ok: true}
+  - solutions: [g*T**2/(4*pi**2)]
+
+- id: v_alg/s_quad_param
+  input: {op: solve, expr: a*x**2 + b*x + c = 0, var: x}
+  expect: quadratic formula
+  correct:
+  - {ok: true}
+  - solutions: [(-b + sqrt(b**2 - 4*a*c))/(2*a), (-b - sqrt(b**2 - 4*a*c))/(2*a)]
+
+- id: v_alg/i_quad
+  input: {op: solve, expr: x**2 - 4 > 0}
+  expect: (-oo,-2) U (2,oo)
+  correct:
+  - {ok: true}
+  - eq: {result: '(-oo, -2) ∪ (2, oo)'}
+
+- id: v_alg/i_rational
+  input: {op: solve, expr: (x - 1)/(x + 2) >= 0}
+  expect: (-oo,-2) U [1,oo)
+  correct:
+  - {ok: true}
+  - eq: {result: '(-oo, -2) ∪ [1, oo)'}
+
+- id: v_alg/i_abs
+  input: {op: solve, expr: abs(x - 1) < 2}
+  expect: (-1,3)
+  correct:
+  - {ok: true}
+  - eq: {result: '(-1, 3)'}
+
+- id: v_alg/i_recip
+  input: {op: solve, expr: 1/x < 1}
+  expect: (-oo,0) U (1,oo)
+  correct:
+  - {ok: true}
+  - eq: {result: '(-oo, 0) ∪ (1, oo)'}
+
+- id: v_alg/i_sqrt
+  input: {op: solve, expr: sqrt(x) < 2}
+  expect: '[0,4)'
+  correct:
+  - {ok: true}
+  - eq: {result: '[0, 4)'}
+
+- id: v_alg/i_log
+  input: {op: solve, expr: log(x) > 0}
+  expect: (1,oo)
+  correct:
+  - {ok: true}
+  - eq: {result: '(1, oo)'}
+
+- id: v_alg/i_cubic
+  input: {op: solve, expr: x**3 > x}
+  expect: (-1,0) U (1,oo)
+  correct:
+  - {ok: true}
+  - eq: {result: '(-1, 0) ∪ (1, oo)'}
+
+- id: v_alg/i_sin
+  input: {op: solve, expr: sin(x) > 1/2}
+  expect: (pi/6, 5pi/6)+2npi
+  correct:
+  - {ok: true}
+  - eq: {result: '(pi/6, 5*pi/6)'}
+  - has:
+      path: note
+      words: [period]
+  partial:
+  - {ok: true}
+  - eq: {result: '(pi/6, 5*pi/6)'}
+
+- id: v_alg/i_never
+  input: {op: solve, expr: x**2 + 1 < 0}
+  expect: empty
+  correct:
+  - {ok: true}
+  - eq: {result: ∅}
+
+- id: v_alg/i_always
+  input: {op: solve, expr: x**2 >= 0}
+  expect: all reals
+  correct:
+  - {ok: true}
+  - eq: {result: '(-oo, oo)'}
+
+- id: v_alg/i_touch
+  input: {op: solve, expr: (x - 1)**2 <= 0}
+  expect: '{1}'
+  correct:
+  - {ok: true}
+  - eq: {result: '{1}'}
+
+- id: v_alg/i_chain
+  input: {op: solve, expr: 0 < x**2 - 1 < 3}
+  expect: (-2,-1) U (1,2)
+  correct:
+  - {ok: true}
+  - eq: {result: '(-2, -1) ∪ (1, 2)'}
+
+- id: v_alg/i_exp_poly
+  input: {op: solve, expr: exp(x) > x**10}
+  expect: 'complex: x<~1.118 & x>~35.77; misses outside [-10,10]?'
+  correct:
+  - {ok: true}
+  - has:
+      path: result
+      words: ['-0.9127', '1.118', '35.77']
+  - any:
+    - - has:
+          path: result
+          words: [oo]
+    - - has:
+          path: note
+          words: [continue]
+  partial:
+  - {ok: true}
+  - has:
+      path: result
+      words: ['-0.9127', '1.118']
+  note: 'true set: (-0.9128, 1.1183) U (35.7715, oo). A numeric search bounded at 1000 is correct if it says the last interval continues.'
+  quick: true
+
+- id: v_alg/i_cbrt
+  input: {op: solve, expr: x**(1/3) < -1}
+  expect: x < -1 (real cube root)
+  correct:
+  - {ok: true}
+  - any:
+    - - eq: {result: '(-oo, -1)'}
+    - - eq: {result: ∅}
+      - has: [cbrt]
+  partial:
+  - {ok: true}
+  - eq: {result: ∅}
+  note: expect 'x < -1 (real cube root)'. principal-root convention (x**(1/3) of a negative base is complex) is a documented design choice; a
+    principal-consistent answer that points to cbrt() counts as correct, a silent one as partial.
+  known_issue: principal root gives an empty set with no hint that cbrt() would give x < -1.
+
+- id: v_alg/ser_sin
+  input: {op: series, expr: sin(x), point: '0', order: 5}
+  expect: x - x^3/6 + x^5/120
+  correct:
+  - {ok: true}
+  - expr: {equals: x - x**3/6 + x**5/120}
+
+- id: v_alg/ser_exp1
+  input: {op: series, expr: exp(x), point: '1', order: 3}
+  expect: e + e(x-1) + e(x-1)^2/2 + e(x-1)^3/6
+  correct:
+  - {ok: true}
+  - expr: {equals: e + e*(x - 1) + e*(x - 1)**2/2 + e*(x - 1)**3/6}
+
+- id: v_alg/ser_log1
+  input: {op: series, expr: log(x), point: '1', order: 4}
+  expect: (x-1) - (x-1)^2/2 + (x-1)^3/3 - (x-1)^4/4
+  correct:
+  - {ok: true}
+  - expr: {equals: (x - 1) - (x - 1)**2/2 + (x - 1)**3/3 - (x - 1)**4/4}
+
+- id: v_alg/ser_tan
+  input: {op: series, expr: tan(x), point: '0', order: 5}
+  expect: x + x^3/3 + 2x^5/15
+  correct:
+  - {ok: true}
+  - expr: {equals: x + x**3/3 + 2*x**5/15}
+
+- id: v_alg/ser_laurent
+  input: {op: series, expr: 1/x + x, point: '0', order: 3}
+  expect: Laurent note
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/x + x}
+  - has:
+      path: note
+      words: [Laurent]
+  partial:
+  - {ok: true}
+  - expr: {equals: 1/x + x}
+
+- id: v_alg/ser_sqrt
+  input: {op: series, expr: sqrt(1 + x), point: '0', order: 3}
+  expect: 1 + x/2 - x^2/8 + x^3/16
+  correct:
+  - {ok: true}
+  - expr: {equals: 1 + x/2 - x**2/8 + x**3/16}
+
+- id: v_alg/ser_cot
+  input: {op: series, expr: cot(x), point: '0', order: 3}
+  expect: 1/x - x/3 - x^3/45
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/x - x/3 - x**3/45}
+
+- id: v_alg/ser_inf
+  input: {op: series, expr: 1/(1 + x), point: oo, order: 3}
+  expect: 1/x - 1/x^2 + 1/x^3
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/x - 1/x**2 + 1/x**3}
+
+- id: v_alg/sum_basel
+  input:
+    op: sum
+    expr: 1/n**2
+    bounds: ['1', oo]
+  expect: pi^2/6
+  correct:
+  - {ok: true}
+  - expr: {equals: pi**2/6}
+
+- id: v_alg/sum_altharm
+  input:
+    op: sum
+    expr: (-1)**(n + 1)/n
+    bounds: ['1', oo]
+  expect: log 2
+  correct:
+  - {ok: true}
+  - expr: {equals: log(2)}
+
+- id: v_alg/sum_harm
+  input:
+    op: sum
+    expr: 1/n
+    bounds: ['1', oo]
+  expect: diverges
+  correct:
+  - {ok: true}
+  - in:
+      result: [oo, diverges]
+
+- id: v_alg/sum_osc
+  input:
+    op: sum
+    expr: (-1)**n
+    bounds: ['1', oo]
+  expect: diverges (oscillates)
+  correct:
+  - {ok: true}
+  - has:
+      path: result
+      words: [diverge]
+  partial:
+  - {ok: true}
+  - has: [diverge, oscillat]
+  quick: true
+
+- id: v_alg/sum_geom
+  input:
+    op: sum
+    expr: 1/2**n
+    bounds: ['0', oo]
+  expect: '2'
+  correct:
+  - {ok: true}
+  - expr: {equals: '2'}
+
+- id: v_alg/sum_gauss
+  input:
+    op: sum
+    expr: n
+    bounds: ['1', '100']
+  expect: '5050'
+  correct:
+  - {ok: true}
+  - expr: {equals: '5050'}
+
+- id: v_alg/sum_tele
+  input:
+    op: sum
+    expr: 1/(n*(n + 1))
+    bounds: ['1', oo]
+  expect: '1'
+  correct:
+  - {ok: true}
+  - expr: {equals: '1'}
+
+- id: v_alg/sum_geom_x
+  input:
+    op: sum
+    expr: n*x**n
+    bounds: ['1', oo]
+  expect: x/(1-x)^2 for |x|<1
+  correct:
+  - {ok: true}
+  - expr: {equals: x/(1 - x)**2}
+  - has:
+      path: note
+      words: ['1']
+  partial:
+  - {ok: true}
+  - expr: {equals: x/(1 - x)**2}
+
+- id: v_alg/sum_zeta3
+  input:
+    op: sum
+    expr: 1/n**3
+    bounds: ['1', oo]
+  expect: zeta(3)~1.202
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: zeta(3)}
+    - - num: {value: 1.2020569, rel: 0.0001, path: approx}
+
+- id: v_alg/sum_sin
+  input:
+    op: sum
+    expr: sin(n)/n**2
+    bounds: ['1', oo]
+  expect: ~1.0139
+  correct:
+  - {ok: true}
+  - num: {value: 1.0139591, rel: 0.0001, path: approx}
+
+- id: v_alg/sum_nlogn
+  input:
+    op: sum
+    expr: 1/(n*log(n))
+    bounds: ['2', oo]
+  expect: diverges
+  correct:
+  - {ok: true}
+  - in:
+      result: [oo, diverges]
+
+- id: v_alg/sum_fact
+  input:
+    op: sum
+    expr: 1/factorial(n)
+    bounds: ['0', oo]
+  expect: e
+  correct:
+  - {ok: true}
+  - expr: {equals: e}
+
+- id: v_alg/sum_ratio
+  input:
+    op: sum
+    expr: n**2/2**n
+    bounds: ['1', oo]
+  expect: '6'
+  correct:
+  - {ok: true}
+  - expr: {equals: '6'}
+
+- id: v_alg/sum_cosn
+  input:
+    op: sum
+    expr: cos(n)
+    bounds: ['1', oo]
+  expect: diverges
+  correct:
+  - {ok: true}
+  - has:
+      path: result
+      words: [diverge]
+
+- id: v_alg/sum_alt_sqrt
+  input:
+    op: sum
+    expr: (-1)**n/sqrt(n)
+    bounds: ['1', oo]
+  expect: ~-0.6049 (converges)
+  correct:
+  - {ok: true}
+  - num: {value: -0.6048986, rel: 0.0001, path: approx}
+
+- id: v_alg/sum_n_n1
+  input:
+    op: sum
+    expr: 1/n**1.0001
+    bounds: ['1', oo]
+  expect: ~10000.58
+  correct:
+  - {ok: true}
+  - num: {value: 10000.5772, rel: 1.0e-06, path: approx}
+
+- id: v_alg/ev_cbrt_neg
+  input: {op: evaluate, expr: (-8)**(1/3), point: null}
+  expect: -2 (real) / principal 1+1.732i
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: '-2'}
+    - - expr: {equals: 2*(-1)**(1/3)}
+      - has: [cbrt]
+  partial:
+  - {ok: true}
+  - expr: {equals: 2*(-1)**(1/3)}
+  note: expect '-2 (real) / principal 1+1.732i'. principal-root convention (x**(1/3) of a negative base is complex) is a documented design choice;
+    a principal-consistent answer that points to cbrt() counts as correct, a silent one as partial.
+
+- id: v_alg/ev_latex_cbrt
+  input: {op: evaluate, expr: '\sqrt[3]{-8}', point: null, latex: true}
+  expect: '-2'
+  correct:
+  - {ok: true}
+  - expr: {equals: '-2'}
+  partial:
+  - {ok: true}
+  - expr: {equals: 2*(-1)**(1/3)}
+  note: LaTeX \sqrt[3]{} is the real cube root, so -2.
+  quick: true
+
+- id: v_alg/ev_00
+  input: {op: evaluate, expr: 0**0, point: null}
+  expect: 1 (convention)
+  correct:
+  - {ok: true}
+  - expr: {equals: '1'}
+
+- id: v_alg/ev_point
+  input: {op: evaluate, expr: x**2 + y, point: 'x=2, y=3'}
+  expect: '7'
+  correct:
+  - {ok: true}
+  - expr: {equals: '7'}
+
+- id: v_alg/ev_div0
+  input: {op: evaluate, expr: 1/(x - 2), point: x=2}
+  expect: undefined
+  correct:
+  - {ok: true}
+  - in:
+      result: [zoo, nan, undefined]
+  - has:
+      path: note
+      words: [undefined]
+  partial:
+  - {ok: true}
+  - in:
+      result: [zoo, nan, undefined]
+
+- id: v_alg/ev_00form
+  input: {op: evaluate, expr: sin(x)/x, point: x=0}
+  expect: undefined -> limit
+  correct:
+  - {ok: true}
+  - in:
+      result: [nan, zoo, undefined]
+  - has:
+      path: note
+      words: [limit]
+  partial:
+  - {ok: true}
+  - in:
+      result: [nan, zoo, undefined]
+  severe:
+  - expr: {equals: '1'}
+
+- id: v_alg/ev_e
+  input: {op: evaluate, expr: e**2, point: null}
+  expect: '7.389'
+  correct:
+  - {ok: true}
+  - expr: {equals: exp(2)}
+
+- id: v_alg/ev_E_var
+  input: {op: evaluate, expr: E**2, point: null}
+  expect: E is variable
+  correct:
+  - {ok: true}
+  - expr: {equals: E**2}
+  - has:
+      path: note
+      words: [E]
+  partial:
+  - {ok: true}
+  - expr: {equals: E**2}
+
+- id: v_alg/ev_big
+  input: {op: evaluate, expr: factorial(20), point: null}
+  expect: '2432902008176640000'
+  correct:
+  - {ok: true}
+  - eq: {result: '2432902008176640000'}
+
+- id: v_calc/relu
+  input: {op: equal, expr: 'Max(x, 0)', against: (x + abs(x))/2}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_calc/min_formula
+  input: {op: equal, expr: 'Min(a, b)', against: (a + b - abs(a - b))/2}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_calc/abs_max
+  input: {op: equal, expr: abs(x), against: 'Max(x, -x)'}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_calc/heav_relu
+  input: {op: equal, expr: x*Heaviside(x), against: 'Max(0, x)'}
+  expect: 'true (except convention at 0: both 0)'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_calc/ceil_floor
+  input: {op: equal, expr: ceil(x), against: -floor(-x)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_calc/hermite
+  input: {op: equal, expr: floor(x/2) + floor((x + 1)/2), against: floor(x)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+  quick: true
+
+- id: v_calc/abs_sq
+  input: {op: equal, expr: abs(x)**2, against: x**2}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_calc/sqrt_abs_prod
+  input: {op: equal, expr: sqrt(x**2*y**2), against: abs(x*y)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_calc/int_1_over_x
+  input: {op: integrate, expr: 1/x, bounds: null}
+  expect: log|x| (+C)
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: log(abs(x))}
+    - - expr: {equals: log(x)}
+      - has:
+          path: note
+          words: [ln|]
+  partial:
+  - {ok: true}
+  - expr: {equals: log(x)}
+
+- id: v_calc/int_sec
+  input: {op: integrate, expr: sec(x), bounds: null}
+  expect: ln|sec x + tan x|
+  correct:
+  - {ok: true}
+  - antiderivative: {of: sec(x)}
+  - has:
+      path: note
+      words: [ln|]
+  partial:
+  - {ok: true}
+  - antiderivative: {of: sec(x)}
+
+- id: v_calc/int_1x_m1_2
+  input:
+    op: integrate
+    expr: 1/x
+    bounds: ['-1', '2']
+  expect: diverges
+  correct:
+  - {ok: true}
+  - eq: {result: diverges}
+  partial:
+  - {ok: true}
+  - in:
+      result: [oo, -oo]
+  severe:
+  - expr: {equals: '0'}
+
+- id: v_calc/int_1_x2_m1_1
+  input:
+    op: integrate
+    expr: 1/x**2
+    bounds: ['-1', '1']
+  expect: oo/diverges
+  correct:
+  - {ok: true}
+  - in:
+      result: [oo, diverges]
+  severe:
+  - num: {value: -2, rel: 1.0e-06}
+  quick: true
+
+- id: v_calc/int_1_xm1sq_0_2
+  input:
+    op: integrate
+    expr: 1/(x-1)**2
+    bounds: ['0', '2']
+  expect: oo/diverges
+  correct:
+  - {ok: true}
+  - in:
+      result: [oo, diverges]
+  severe:
+  - num: {value: -2, rel: 1.0e-06}
+
+- id: v_calc/int_1_xm1_0_2
+  input:
+    op: integrate
+    expr: 1/(x-1)
+    bounds: ['0', '2']
+  expect: diverges (PV=0)
+  correct:
+  - {ok: true}
+  - eq: {result: diverges}
+  partial:
+  - {ok: true}
+  - in:
+      result: [oo, -oo]
+  severe:
+  - expr: {equals: '0'}
+
+- id: v_calc/int_1_x3_m1_1
+  input:
+    op: integrate
+    expr: 1/x**3
+    bounds: ['-1', '1']
+  expect: diverges (PV=0)
+  correct:
+  - {ok: true}
+  - eq: {result: diverges}
+  partial:
+  - {ok: true}
+  - in:
+      result: [oo, -oo]
+  severe:
+  - expr: {equals: '0'}
+
+- id: v_calc/int_tan_0_pi
+  input:
+    op: integrate
+    expr: tan(x)
+    bounds: ['0', pi]
+  expect: diverges (PV=0)
+  correct:
+  - {ok: true}
+  - eq: {result: diverges}
+  partial:
+  - {ok: true}
+  - in:
+      result: [oo, -oo]
+  severe:
+  - expr: {equals: '0'}
+
+- id: v_calc/int_cauchy_odd
+  input:
+    op: integrate
+    expr: x/(x**2 + 1)
+    bounds: [-oo, oo]
+  expect: diverges (PV=0)
+  correct:
+  - {ok: true}
+  - eq: {result: diverges}
+  partial:
+  - {ok: true}
+  - in:
+      result: [oo, -oo]
+  severe:
+  - expr: {equals: '0'}
+  note: the principal value is 0, but the improper integral diverges.
+
+- id: v_calc/int_x_inf
+  input:
+    op: integrate
+    expr: x
+    bounds: [-oo, oo]
+  expect: diverges
+  correct:
+  - {ok: true}
+  - eq: {result: diverges}
+  partial:
+  - {ok: true}
+  - in:
+      result: [oo, -oo]
+  severe:
+  - expr: {equals: '0'}
+
+- id: v_calc/int_sin_0_inf
+  input:
+    op: integrate
+    expr: sin(x)
+    bounds: ['0', oo]
+  expect: diverges (oscillates)
+  correct:
+  - {ok: true}
+  - has:
+      path: result
+      words: [diverges]
+  partial:
+  - {ok: true}
+  - has:
+      path: result
+      words: [AccumBounds]
+
+- id: v_calc/int_sinc
+  input:
+    op: integrate
+    expr: sin(x)/x
+    bounds: ['0', oo]
+  expect: pi/2
+  correct:
+  - {ok: true}
+  - expr: {equals: pi/2}
+
+- id: v_calc/int_gauss
+  input:
+    op: integrate
+    expr: exp(-x**2)
+    bounds: ['0', oo]
+  expect: sqrt(pi)/2
+  correct:
+  - {ok: true}
+  - expr: {equals: sqrt(pi)/2}
+
+- id: v_calc/int_1_sqrt
+  input:
+    op: integrate
+    expr: 1/sqrt(x)
+    bounds: ['0', '1']
+  expect: '2'
+  correct:
+  - {ok: true}
+  - expr: {equals: '2'}
+
+- id: v_calc/int_log01
+  input:
+    op: integrate
+    expr: log(x)
+    bounds: ['0', '1']
+  expect: '-1'
+  correct:
+  - {ok: true}
+  - expr: {equals: '-1'}
+
+- id: v_calc/int_abs
+  input:
+    op: integrate
+    expr: abs(x - 1)
+    bounds: ['0', '3']
+  expect: 5/2
+  correct:
+  - {ok: true}
+  - expr: {equals: 5/2}
+
+- id: v_calc/int_floor
+  input:
+    op: integrate
+    expr: floor(x)
+    bounds: ['0', '3']
+  expect: '3'
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: '3'}
+    - - num: {value: 3, rel: 1.0e-06, path: approx}
+  known_issue: sympy cannot integrate floor() and the numeric fallback gives up at the jumps ('not computed'; the note wrongly suggests divergence).
+  quick: true
+
+- id: v_calc/int_semicircle
+  input:
+    op: integrate
+    expr: sqrt(4 - x**2)
+    bounds: ['-2', '2']
+  expect: 2*pi
+  correct:
+  - {ok: true}
+  - expr: {equals: 2*pi}
+
+- id: v_calc/int_1_x2m1_0_2
+  input:
+    op: integrate
+    expr: 1/(x**2 - 1)
+    bounds: ['0', '2']
+  expect: diverges
+  correct:
+  - {ok: true}
+  - eq: {result: diverges}
+  partial:
+  - {ok: true}
+  - in:
+      result: [oo, -oo]
+  severe:
+  - expr: {equals: '0'}
+
+- id: v_calc/int_xlog_2_inf
+  input:
+    op: integrate
+    expr: 1/(x*log(x))
+    bounds: ['2', oo]
+  expect: oo
+  correct:
+  - {ok: true}
+  - in:
+      result: [oo, diverges]
+
+- id: v_calc/int_cbrt_m1_1
+  input:
+    op: integrate
+    expr: x**(1/3)
+    bounds: ['-1', '1']
+  expect: '0 with real cube root (principal: complex)'
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: '0'}
+    - - has:
+          path: note
+          words: [cbrt]
+  partial:
+  - {ok: true}
+  - expr: {equals: 3/4 + 3*(-1)**(1/3)/4}
+  note: 'expect ''0 with real cube root (principal: complex)''. principal-root convention (x**(1/3) of a negative base is complex) is a documented
+    design choice; a principal-consistent answer that points to cbrt() counts as correct, a silent one as partial.'
+
+- id: v_calc/int_cbrt_real
+  input:
+    op: integrate
+    expr: cbrt(x)
+    bounds: ['-1', '1']
+  expect: '0'
+  correct:
+  - {ok: true}
+  - expr: {equals: '0'}
+
+- id: v_calc/int_x23
+  input:
+    op: integrate
+    expr: 1/x**(2/3)
+    bounds: ['-1', '1']
+  expect: 6 (real) ; principal complex
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: '6'}
+    - - has:
+          path: note
+          words: [cbrt]
+  partial:
+  - {ok: true}
+  - expr: {equals: 3 - 3*(-1)**(1/3)}
+  note: expect '6 (real); principal complex'. principal-root convention (x**(1/3) of a negative base is complex) is a documented design choice;
+    a principal-consistent answer that points to cbrt() counts as correct, a silent one as partial.
+
+- id: v_calc/int_abs_sin
+  input:
+    op: integrate
+    expr: abs(sin(x))
+    bounds: ['0', 2*pi]
+  expect: '4'
+  correct:
+  - {ok: true}
+  - expr: {equals: '4'}
+
+- id: v_calc/int_exp_sin
+  input:
+    op: integrate
+    expr: exp(-x)*sin(x)
+    bounds: ['0', oo]
+  expect: 1/2
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/2}
+
+- id: v_calc/int_xexp
+  input: {op: integrate, expr: x*exp(x), bounds: null}
+  expect: (x-1)e^x
+  correct:
+  - {ok: true}
+  - antiderivative: {of: x*exp(x)}
+
+- id: v_calc/int_1_1px2_inf
+  input:
+    op: integrate
+    expr: 1/(1 + x**2)
+    bounds: [-oo, oo]
+  expect: pi
+  correct:
+  - {ok: true}
+  - expr: {equals: pi}
+
+- id: v_calc/int_exp_x2
+  input:
+    op: integrate
+    expr: exp(x**2)
+    bounds: ['0', '1']
+  expect: ~1.4627
+  correct:
+  - {ok: true}
+  - num: {value: 1.4626517, rel: 0.0001}
+
+- id: v_calc/lim_sinx_x
+  input: {op: limit, expr: sin(x)/x, point: '0'}
+  expect: '1'
+  correct:
+  - {ok: true}
+  - expr: {equals: '1'}
+
+- id: v_calc/lim_e
+  input: {op: limit, expr: (1 + 1/x)**x, point: oo}
+  expect: e
+  correct:
+  - {ok: true}
+  - expr: {equals: e}
+
+- id: v_calc/lim_1_x
+  input: {op: limit, expr: 1/x, point: '0'}
+  expect: DNE
+  correct:
+  - {ok: true}
+  - eq: {result: does not exist}
+  severe:
+  - in:
+      result: [oo, -oo]
+  quick: true
+
+- id: v_calc/lim_abs_x
+  input: {op: limit, expr: abs(x)/x, point: '0'}
+  expect: DNE
+  correct:
+  - {ok: true}
+  - eq: {result: does not exist}
+  severe:
+  - in:
+      result: ['1', '-1']
+
+- id: v_calc/lim_xsin1x
+  input: {op: limit, expr: x*sin(1/x), point: '0'}
+  expect: '0'
+  correct:
+  - {ok: true}
+  - expr: {equals: '0'}
+
+- id: v_calc/lim_sin1x
+  input: {op: limit, expr: sin(1/x), point: '0'}
+  expect: DNE (oscillates)
+  correct:
+  - {ok: true}
+  - any:
+    - - eq: {result: does not exist}
+    - - has:
+          path: result
+          words: [AccumBounds]
+      - has:
+          path: note
+          words: [not converge]
+  partial:
+  - {ok: true}
+  - has:
+      path: result
+      words: [AccumBounds]
+
+- id: v_calc/lim_removable
+  input: {op: limit, expr: (x**2 - 1)/(x - 1), point: '1'}
+  expect: '2'
+  correct:
+  - {ok: true}
+  - expr: {equals: '2'}
+
+- id: v_calc/lim_floor
+  input: {op: limit, expr: floor(x), point: '1'}
+  expect: DNE
+  correct:
+  - {ok: true}
+  - eq: {result: does not exist}
+  severe:
+  - in:
+      result: ['0', '1']
+
+- id: v_calc/lim_1_x2
+  input: {op: limit, expr: 1/x**2, point: '0'}
+  expect: oo
+  correct:
+  - {ok: true}
+  - eq: {result: oo}
+
+- id: v_calc/lim_exp_1x
+  input: {op: limit, expr: exp(1/x), point: '0'}
+  expect: DNE
+  correct:
+  - {ok: true}
+  - eq: {result: does not exist}
+  severe:
+  - in:
+      result: [oo, '0']
+
+- id: v_calc/lim_xx
+  input: {op: limit, expr: x**x, point: 0+}
+  expect: '1'
+  correct:
+  - {ok: true}
+  - expr: {equals: '1'}
+
+- id: v_calc/lim_log
+  input: {op: limit, expr: log(x), point: '0'}
+  expect: DNE in reals / -oo from right
+  correct:
+  - {ok: true}
+  - in:
+      result: [-oo, does not exist]
+  note: log is only real for x > 0, so the limit within the domain is -oo; 'does not exist' is also accepted.
+
+- id: v_calc/lim_log_right
+  input: {op: limit, expr: log(x), point: 0+}
+  expect: -oo
+  correct:
+  - {ok: true}
+  - eq: {result: -oo}
+
+- id: v_calc/lim_cos_inf
+  input: {op: limit, expr: cos(x), point: oo}
+  expect: DNE oscillates
+  correct:
+  - {ok: true}
+  - any:
+    - - eq: {result: does not exist}
+    - - has:
+          path: result
+          words: [AccumBounds]
+      - has:
+          path: note
+          words: [not converge]
+  partial:
+  - {ok: true}
+  - has:
+      path: result
+      words: [AccumBounds]
+
+- id: v_calc/lim_2x
+  input: {op: limit, expr: (2**x - 1)/x, point: '0'}
+  expect: log 2
+  correct:
+  - {ok: true}
+  - expr: {equals: log(2)}
+
+- id: v_calc/lim_left_1x
+  input: {op: limit, expr: 1/x, point: 0-}
+  expect: -oo
+  correct:
+  - {ok: true}
+  - eq: {result: -oo}
+
+- id: v_calc/lim_sqrt_x
+  input: {op: limit, expr: sqrt(x), point: '0'}
+  expect: 0 (one-sided by domain)
+  correct:
+  - {ok: true}
+  - expr: {equals: '0'}
+
+- id: v_calc/lim_inf_poly
+  input: {op: limit, expr: (3*x**2 + 1)/(x**2 - 5), point: -oo}
+  expect: '3'
+  correct:
+  - {ok: true}
+  - expr: {equals: '3'}
+
+- id: v_calc/lim_sqrt_diff
+  input: {op: limit, expr: sqrt(x**2 + x) - x, point: oo}
+  expect: 1/2
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/2}
+
+- id: v_calc/lim_sqrt_diff_minus
+  input: {op: limit, expr: sqrt(x**2 + x) - x, point: -oo}
+  expect: oo
+  correct:
+  - {ok: true}
+  - eq: {result: oo}
+
+- id: v_calc/d_xx
+  input: {op: diff, expr: x**x}
+  expect: x**x*(log x + 1)
+  correct:
+  - {ok: true}
+  - expr: {equals: x**x*(log(x) + 1)}
+
+- id: v_calc/d_abs
+  input: {op: diff, expr: abs(x)}
+  expect: sign(x) (undefined at 0)
+  correct:
+  - {ok: true}
+  - expr: {equals: sign(x)}
+
+- id: v_calc/d_log_abs
+  input: {op: diff, expr: log(abs(x))}
+  expect: 1/x
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/x}
+  - lacks:
+      path: result
+      words: [Piecewise, 'Eq(x, 0)']
+  partial:
+  - {ok: true}
+  - expr: {equals: 1/x}
+  known_issue: 'returns Piecewise((0, Eq(x, 0)), (1/x, True)): right for x != 0 but claims the derivative is 0 at x = 0, where it is undefined.'
+
+- id: v_calc/d_floor
+  input: {op: diff, expr: floor(x)}
+  expect: 0 except integers (undefined)
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: '0'}
+      - has: [integer]
+    - - has:
+          path: note
+          words: [integer]
+  partial:
+  - {ok: true}
+  - expr: {equals: '0'}
+  known_issue: returns the unevaluated Derivative(floor(x), x) with no explanation (expected 0 except at integers, where it is undefined).
+
+- id: v_calc/d2_expsin
+  input: {op: diff, expr: exp(x)*sin(x), order: 2}
+  expect: 2 e^x cos x
+  correct:
+  - {ok: true}
+  - expr: {equals: 2*exp(x)*cos(x)}
+
+- id: v_calc/d_asin
+  input: {op: diff, expr: asin(x)}
+  expect: 1/sqrt(1-x^2)
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/sqrt(1 - x**2)}
+
+- id: v_calc/d_partial
+  input: {op: diff, expr: x**2*y + y**3, var: y}
+  expect: x**2 + 3y**2
+  correct:
+  - {ok: true}
+  - expr: {equals: x**2 + 3*y**2}
+
+- id: v_calc/d_cbrt
+  input: {op: diff, expr: x**(1/3)}
+  expect: 1/(3 x^(2/3))
+  correct:
+  - {ok: true}
+  - expr: {equals: 1/(3*x**(2/3))}
+
+- id: v_equal/acos_cos_vs_abs
+  input: {op: equal, expr: acos(cos(x)), against: abs(x)}
+  expect: false (differs for |x|>pi, e.g. x=4)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/acos_cos_vs_x_pos
+  input: {op: equal, expr: acos(cos(x)), against: x, assume: positive}
+  expect: false even for x>0 (x=4)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/min_x_3_vs_x
+  input: {op: equal, expr: 'Min(x, 3)', against: x}
+  expect: false (x=4)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/max_x_m5_vs_x
+  input: {op: equal, expr: 'Max(x, -5)', against: x}
+  expect: false (x=-6)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/heaviside_shift
+  input: {op: equal, expr: x + Heaviside(x - 2.5), against: x}
+  expect: false (x=3)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/floor100
+  input: {op: equal, expr: floor(100*x)/100, against: x}
+  expect: false (x=0.005)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+  known_issue: 'regression from 0.3.2 (false -> unknown): sample points have 2 decimals, so floor(100x)/100 == x at every point.'
+  quick: true
+
+- id: v_equal/sin100pi
+  input: {op: equal, expr: sin(100*pi*x), against: '0'}
+  expect: false (x=0.005)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+  known_issue: 'regression from 0.3.2 (false -> unknown): 2-decimal sample points are zeros of sin(100*pi*x).'
+  quick: true
+
+- id: v_equal/cos200pi
+  input: {op: equal, expr: cos(200*pi*x), against: '1'}
+  expect: false (x=0.0025)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+  known_issue: 'regression from 0.3.2 (false -> unknown): 2-decimal sample points are where cos(200*pi*x) = 1.'
+  quick: true
+
+- id: v_equal/asin_sin
+  input: {op: equal, expr: asin(sin(x)), against: x}
+  expect: 'false'
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/log_xy
+  input: {op: equal, expr: log(x*y), against: log(x) + log(y)}
+  expect: false over reals (x,y<0); true if positive
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  - has: [positive]
+  partial:
+  - {ok: true}
+  - in:
+      matches: [false, unknown]
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/log_x2
+  input: {op: equal, expr: log(x**2), against: 2*log(x)}
+  expect: false over reals
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/log_vs_logabs
+  input: {op: equal, expr: log(x), against: log(abs(x))}
+  expect: false over reals
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/tiny_1e-9x
+  input: {op: equal, expr: x + 1e-9*x, against: x}
+  expect: 'false'
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+  known_issue: 'says true: a relative difference of 1e-9 is inside the float tolerance.'
+  quick: true
+
+- id: v_equal/tiny_exp
+  input: {op: equal, expr: x + exp(-50), against: x}
+  expect: 'false'
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+  known_issue: 'regression from 0.3.2 (false -> unknown): exp(-50) ~ 2e-22 is below the numeric tolerance.'
+  quick: true
+
+- id: v_equal/atan_sum
+  input: {op: equal, expr: atan(x) + atan(y), against: atan((x + y)/(1 - x*y))}
+  expect: false (branch)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/atan_recip
+  input: {op: equal, expr: atan(x) + atan(1/x), against: pi/2}
+  expect: false (x<0), true x>0
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/cuberoot_pow_principal
+  input: {op: equal, expr: (x**3)**(1/3), against: x}
+  expect: 'false over reals by principal branch? real cube root: true'
+  correct:
+  - {ok: true}
+  - any:
+    - - eq: {matches: true}
+    - - eq: {matches: false}
+      - has: [cbrt]
+  partial:
+  - {ok: true}
+  - in:
+      matches: [false, unknown]
+  note: 'expect ''false by principal branch? real cube root: true''. principal-root convention (x**(1/3) of a negative base is complex) is a documented
+    design choice; a principal-consistent answer that points to cbrt() counts as correct, a silent one as partial.'
+  known_issue: 'principal root: unknown (only positive points compared), no pointer to cbrt().'
+
+- id: v_equal/sqrt_x_sq
+  input: {op: equal, expr: sqrt(x)*sqrt(x), against: x}
+  expect: only x>=0 in reals (undefined x<0)
+  correct:
+  - {ok: true}
+  - in:
+      matches: [true, unknown]
+  - has:
+      path: note
+      words: [undefined]
+  partial:
+  - {ok: true}
+  - in:
+      matches: [true, unknown]
+  note: 'equal only for x >= 0 over the reals: true with a domain note is correct.'
+
+- id: v_equal/exp_log
+  input: {op: equal, expr: exp(log(x)), against: x}
+  expect: only x>0 in reals
+  correct:
+  - {ok: true}
+  - in:
+      matches: [true, unknown]
+  - has:
+      path: note
+      words: [undefined]
+  partial:
+  - {ok: true}
+  - in:
+      matches: [true, unknown]
+  note: 'equal only for x > 0 over the reals: true with a domain note is correct.'
+
+- id: v_equal/taylor_exp_deg8
+  input: {op: equal, expr: 1 + x + x**2/2 + x**3/6 + x**4/24 + x**5/120 + x**6/720 + x**7/5040 + x**8/40320, against: exp(x)}
+  expect: 'false'
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/wrong_int_const
+  input: {op: equal, expr: sin(x)**2, against: -cos(x)**2}
+  expect: false (differ by const 1)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  - has:
+      path: note
+      words: [constant]
+  partial:
+  - {ok: true}
+  - eq: {matches: false}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/sqrt_xy
+  input: {op: equal, expr: sqrt(x)*sqrt(y), against: sqrt(x*y)}
+  expect: false over reals
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/frac_float_approx
+  input: {op: equal, expr: 0.3333*x, against: x/3}
+  expect: 'false'
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/float15_third
+  input: {op: equal, expr: 0.333333333333333*x, against: x/3}
+  expect: false strictly (15 digits) - rounding
+  correct:
+  - {ok: true}
+  - in:
+      matches: [true, false, unknown]
+  note: 0.333333333333333 is 1/3 rounded to 15 digits (machine precision); calling it equal (rounding) or not equal (strict) are both defensible.
+
+- id: v_equal/implicit_1_2x
+  input: {op: equal, expr: 1/2x, against: 1/(2*x)}
+  expect: student intent 1/(2x)? ambiguous
+  correct:
+  - {ok: true}
+  - any:
+    - - eq: {matches: true}
+    - - eq: {matches: false}
+      - has: [implicit]
+    - - eq: {matches: false}
+      - has: [ambiguous]
+  partial:
+  - {ok: true}
+  - eq: {matches: false}
+  note: '''1/2x'' is ambiguous (x/2 by precedence, 1/(2x) by intent). Precedence reading (false) is partial; a correct answer needs a warning
+    about the implicit multiplication.'
+  known_issue: reads 1/2x as x/2 without warning that the student probably meant 1/(2x).
+
+- id: v_equal/sinx_name
+  input: {op: equal, expr: sinx**2 + cosx**2, against: '1'}
+  expect: should reject 'sinx' (missing parens)
+  correct:
+  - error: [sin(x)]
+  severe:
+  - {ok: true}
+
+- id: v_equal/deg_sin30
+  input: {op: equal, expr: sin(30), against: 1/2}
+  expect: false + degree hint
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  - has:
+      path: note
+      words: [radian]
+  partial:
+  - {ok: true}
+  - eq: {matches: false}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/rounded_g
+  input: {op: equal, expr: 9.81*2.5, against: '24.5'}
+  expect: false (24.525)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+
+- id: v_equal/trig_triple
+  input: {op: equal, expr: sin(3*x), against: 3*sin(x) - 4*sin(x)**3}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/trig_pow4
+  input: {op: equal, expr: cos(x)**4 - sin(x)**4, against: cos(2*x)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/sec_tan
+  input: {op: equal, expr: sec(x)**2 - tan(x)**2, against: '1'}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/tan_half
+  input: {op: equal, expr: tan(x/2), against: (1 - cos(x))/sin(x)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_equal/hyper1
+  input: {op: equal, expr: cosh(x)**2 - sinh(x)**2, against: '1'}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/tanh_exp
+  input: {op: equal, expr: tanh(x), against: (exp(2*x) - 1)/(exp(2*x) + 1)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_equal/asinh_log
+  input: {op: equal, expr: asinh(x), against: log(x + sqrt(x**2 + 1))}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_equal/atanh_log
+  input: {op: equal, expr: atanh(x), against: log((1 + x)/(1 - x))/2}
+  expect: true on (-1,1)
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  note: true on the common domain (-1, 1).
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+
+- id: v_equal/nested_rad1
+  input: {op: equal, expr: sqrt(3 + 2*sqrt(2)), against: 1 + sqrt(2)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/nested_rad2
+  input: {op: equal, expr: sqrt(5 + 2*sqrt(6)), against: sqrt(2) + sqrt(3)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/cardano_cbrt
+  input: {op: equal, expr: cbrt(2 + sqrt(5)) + cbrt(2 - sqrt(5)), against: '1'}
+  expect: true (real cube roots)
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/cardano_pow
+  input: {op: equal, expr: (2 + sqrt(5))**(1/3) + (2 - sqrt(5))**(1/3), against: '1'}
+  expect: 'true with real cube roots; principal branch: false'
+  correct:
+  - {ok: true}
+  - any:
+    - - eq: {matches: true}
+    - - eq: {matches: false}
+      - has: [cbrt]
+  partial:
+  - {ok: true}
+  - in:
+      matches: [false, unknown]
+  note: 'expect ''true with real cube roots; principal branch: false''. principal-root convention (x**(1/3) of a negative base is complex) is
+    a documented design choice; a principal-consistent answer that points to cbrt() counts as correct, a silent one as partial.'
+  known_issue: principal root makes the Cardano sum complex; false without a pointer to cbrt().
+
+- id: v_equal/log_rules_pos
+  input: {op: equal, expr: log(x*y), against: log(x) + log(y), assume: positive}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/sqrt_pos
+  input: {op: equal, expr: sqrt(m**2*v**2), against: m*v, assume: positive}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/abs_identity
+  input: {op: equal, expr: abs(x - 1) + abs(x + 1), against: '2*Max(1, abs(x))'}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  known_issue: 'unknown: true identity that sympy cannot prove; numerically equal at all sample points (honest, not proven).'
+  quick: true
+
+- id: v_equal/abs_sign
+  input: {op: equal, expr: abs(x), against: x*sign(x)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/float_sum
+  input: {op: equal, expr: 0.1 + 0.2, against: '0.3'}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/partial_frac
+  input: {op: equal, expr: 1/(x*(x+1)), against: 1/x - 1/(x+1)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/log10
+  input: {op: equal, expr: log10(x), against: log(x)/log(10)}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/binom_expand
+  input: {op: equal, expr: (a + b)**5, against: a**5 + 5*a**4*b + 10*a**3*b**2 + 10*a**2*b**3 + 5*a*b**4 + b**5}
+  expect: 'true'
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/acos_cos_small
+  input: {op: equal, expr: cos(acos(x)), against: x}
+  expect: true on [-1,1]
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/latex_frac
+  input: {op: equal, expr: '\frac{x^2-1}{x-1}', against: x+1, latex: false}
+  expect: true except x=1
+  correct:
+  - any:
+    - - error: [latex]
+    - - {ok: true}
+      - eq: {matches: true}
+  note: expect was 'true except x=1', but the input sets latex=false; an error that points to LaTeX/latex=true is the right answer (auto-detecting
+    LaTeX also accepted).
+
+- id: v_equal/latex_both
+  input: {op: equal, expr: '\frac{x^2-1}{x-1}', against: x+1, latex: true}
+  expect: true except x=1
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+
+- id: v_equal/latex_sqrt3
+  input: {op: equal, expr: '\sqrt[3]{x^3}', against: x, latex: true}
+  expect: true for real cube root
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  note: LaTeX \sqrt[3]{} is the real cube root, so true.
+  known_issue: 'unknown: sympy cannot prove cbrt(x**3) == x symbolically (numerically equal).'
+
+- id: v_last/ramanujan
+  input: {op: equal, expr: exp(pi*sqrt(163)), against: 640320**3 + 744}
+  expect: false (differ by 7.5e-13)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+  quick: true
+
+- id: v_last/pi_float
+  input: {op: equal, expr: pi, against: '3.14159265358979'}
+  expect: false strictly / rounding
+  correct:
+  - {ok: true}
+  - in:
+      matches: [true, false, unknown]
+  note: 'pi to 15 digits: equal (rounding) or not (strict) are both defensible.'
+
+- id: v_last/sqrt2_float
+  input: {op: equal, expr: sqrt(2), against: '1.41421356237310'}
+  expect: false strictly / rounding
+  correct:
+  - {ok: true}
+  - in:
+      matches: [true, false, unknown]
+  note: 'sqrt(2) to 15 digits: equal (rounding) or not (strict) are both defensible.'
+
+- id: v_last/near_int_coef
+  input: {op: equal, expr: 0.49999999*x**2, against: x**2/2}
+  expect: false (rel 2e-8)
+  correct:
+  - {ok: true}
+  - eq: {matches: false}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: true}
+  known_issue: 'says true: 0.49999999 vs 1/2 (relative 2e-8) is inside the float tolerance.'
+  quick: true
+
+- id: v_last/lnx_name
+  input: {op: equal, expr: lnx, against: log(x)}
+  expect: should reject 'lnx'
+  correct:
+  - error: [ln(x)]
+  severe:
+  - {ok: true}
+
+- id: v_last/sqrtx_name
+  input: {op: equal, expr: sqrtx**2, against: x}
+  expect: should reject 'sqrtx'
+  correct:
+  - error: [sqrt(x)]
+  severe:
+  - {ok: true}
+
+- id: v_last/diff_sinx
+  input: {op: diff, expr: sinx, var: x}
+  expect: should reject or warn; parsed as variable 'sinx' -> 0
+  correct:
+  - any:
+    - - error: [sin(x)]
+    - - {ok: true}
+      - has:
+          path: [warnings, note]
+          words: [sin(x)]
+  severe:
+  - {ok: true}
+  - expr: {equals: '0'}
+
+- id: v_last/int_logabs_compare
+  input: {op: equal, expr: -log(sin(x) - 1)/2 + log(sin(x) + 1)/2, against: log(abs(sec(x) + tan(x)))}
+  expect: true on domain
+  correct:
+  - {ok: true}
+  - eq: {matches: true}
+  partial:
+  - {ok: true}
+  - eq: {matches: unknown}
+  severe:
+  - eq: {matches: false}
+  note: both are antiderivatives of sec(x); equal on the common domain.
+  known_issue: 'unknown: the two antiderivatives have no common real domain point unless log is read as ln|.|.'
+
+- id: v_last/int_sin_inf_eq
+  input:
+    op: integrate
+    expr: cos(x)
+    bounds: ['0', oo]
+  expect: diverges
+  correct:
+  - {ok: true}
+  - has:
+      path: result
+      words: [diverges]
+  partial:
+  - {ok: true}
+  - has:
+      path: result
+      words: [AccumBounds]
+
+- id: v_last/int_floor_small
+  input:
+    op: integrate
+    expr: floor(x)
+    bounds: ['0', '2.5']
+  expect: '2'
+  correct:
+  - {ok: true}
+  - any:
+    - - expr: {equals: '2'}
+    - - num: {value: 2, rel: 1.0e-06, path: approx}
+  known_issue: 'same as v_calc/int_floor: floor() integral is not computed.'

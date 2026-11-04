@@ -1,0 +1,575 @@
+# plot_function: 함수 그래프의 정의역·점근선·불연속 경고
+# 원본: benchmarks/raw/audit-2026-11-03.json(2026-11-03 감사). input·expect는 원본 그대로, correct/partial/severe는 기계 판정 조건.
+# 문법은 benchmarks/math/README.md. note는 사람의 기대를 고치거나 해석한 이유, known_issue는 아직 틀리는 원인 한 줄.
+
+tool: plot_function
+cases:
+
+- id: plots/tan
+  input:
+    series:
+    - {expr: tan(x)}
+    x_range: [-5, 5]
+    name: tan
+  expect: asymptotes ±pi/2, ±3pi/2
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, π/2, 3π/2]
+  quick: true
+
+- id: plots/recip
+  input:
+    series:
+    - {expr: 1/x}
+    x_range: [-2, 2]
+    name: recip
+  expect: asymptote 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+
+- id: plots/log
+  input:
+    series:
+    - {expr: log(x)}
+    x_range: [-1, 3]
+    name: log
+  expect: gap x<=0, asymptote at 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+  - has:
+      path: warnings
+      words: [no real values]
+  partial:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+
+- id: plots/sqrt
+  input:
+    series:
+    - {expr: sqrt(x)}
+    x_range: [-2, 2]
+    name: sqrt
+  expect: gap x<0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [no real values]
+  - lacks:
+      path: warnings
+      words: [diverges]
+
+- id: plots/xsin1x
+  input:
+    series:
+    - {expr: x*sin(1/x)}
+    x_range: [-1, 1]
+    name: xsin1x
+  expect: removable hole at 0; continuous
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [single point]
+  - lacks:
+      path: warnings
+      words: [diverges, jumps]
+
+- id: plots/sin1x
+  input:
+    series:
+    - {expr: sin(1/x)}
+    x_range: [-1, 1]
+    name: sin1x
+  expect: oscillating discontinuity at 0 (not a jump)
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [oscillat]
+  - lacks:
+      path: warnings
+      words: [jumps]
+  partial:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [x = 0]
+  quick: true
+
+- id: plots/floor
+  input:
+    series:
+    - {expr: floor(x)}
+    x_range: [-3, 3]
+    name: floor
+  expect: jumps at -2,-1,0,1,2 (and 3 endpoint)
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [jumps, -2(, -1(, 0(, 1(, 2(]
+
+- id: plots/cbrt_pow
+  input:
+    series:
+    - {expr: x**(1/3)}
+    x_range: [-8, 8]
+    name: cbrt_pow
+  expect: real cube root defined for x<0 (student expects)
+  correct:
+  - {ok: true}
+  - any:
+    - - lacks:
+          path: warnings
+          words: [no real values]
+    - - has:
+          path: warnings
+          words: [cbrt]
+  partial:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [no real values]
+  note: expect 'real cube root defined for x<0'. principal-root convention is a documented design choice; a gap with a pointer to cbrt() counts
+    as correct.
+
+- id: plots/cbrt_fn
+  input:
+    series:
+    - {expr: cbrt(x)}
+    x_range: [-8, 8]
+    name: cbrt_fn
+  expect: no warnings
+  correct:
+  - {ok: true}
+  - len: {warnings: 0}
+  partial:
+  - {ok: true}
+  - lacks:
+      path: warnings
+      words: [no real values, diverges, jumps]
+
+- id: plots/x23
+  input:
+    series:
+    - {expr: x**(2/3)}
+    x_range: [-8, 8]
+    name: x23
+  expect: 'real: defined for x<0'
+  correct:
+  - {ok: true}
+  - any:
+    - - lacks:
+          path: warnings
+          words: [no real values]
+    - - has:
+          path: warnings
+          words: [cbrt]
+  partial:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [no real values]
+  note: 'expect ''real: defined for x<0''. Same rule as plots/cbrt_pow.'
+
+- id: plots/removable
+  input:
+    series:
+    - {expr: (x**2 - 1)/(x - 1)}
+    x_range: [-3, 3]
+    name: removable
+  expect: hole at 1
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [single point, x = 1]
+  - lacks:
+      path: warnings
+      words: [diverges]
+
+- id: plots/sinc
+  input:
+    series:
+    - {expr: sin(x)/x}
+    x_range: [-10, 10]
+    name: sinc
+  expect: hole at 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [single point, x = 0]
+  - lacks:
+      path: warnings
+      words: [diverges]
+
+- id: plots/absx_x
+  input:
+    series:
+    - {expr: abs(x)/x}
+    x_range: [-2, 2]
+    name: absx_x
+  expect: jump at 0 (-1 -> 1)
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [jumps, x = 0]
+
+- id: plots/exp1x
+  input:
+    series:
+    - {expr: exp(1/x)}
+    x_range: [-2, 2]
+    name: exp1x
+  expect: diverges right of 0, ->0 left
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+
+- id: plots/offgrid_pole
+  input:
+    series:
+    - {expr: 1/(x - 0.0003)}
+    x_range: [-1, 1]
+    name: offgrid_pole
+  expect: asymptote 0.0003
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, '0.0003']
+  quick: true
+
+- id: plots/steep_peak
+  input:
+    series:
+    - {expr: 1/(x**2 + 1e-6)}
+    x_range: [-1, 1]
+    name: steep_peak
+  expect: continuous peak 1e6, no asymptote
+  correct:
+  - {ok: true}
+  - lacks:
+      path: warnings
+      words: [diverges, jumps]
+
+- id: plots/narrow_spike
+  input:
+    series:
+    - {expr: exp(-1e8*(x - 0.3)**2)}
+    x_range: [0, 1]
+    name: narrow_spike
+  expect: spike at 0.3 (width 1e-4) - aliasing
+  correct:
+  - {ok: true}
+  - any:
+    - - num: {path: y_range.1, value: 1.0, rel: 0.1}
+    - - has:
+          path: warnings
+          words: [narrow]
+    - - has:
+          path: warnings
+          words: [sampl]
+  note: a 1e-4-wide spike at 0.3 must be drawn (y up to 1) or flagged as under-sampled.
+
+- id: plots/aliasing
+  input:
+    series:
+    - {expr: sin(1000*x)}
+    x_range: [0, 10]
+    name: aliasing
+  expect: dense oscillation - aliasing
+  correct:
+  - {ok: true}
+  - any:
+    - - has:
+          path: warnings
+          words: [alias]
+    - - has:
+          path: warnings
+          words: [oscillat]
+    - - has:
+          path: warnings
+          words: [sampl]
+  partial:
+  - {ok: true}
+  known_issue: sin(1000x) on [0, 10] (about 1600 periods) is drawn from too few samples with no aliasing warning.
+
+- id: plots/asin_dom
+  input:
+    series:
+    - {expr: asin(x)}
+    x_range: [-2, 2]
+    name: asin_dom
+  expect: gaps |x|>1
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [no real values, -2 ~ -1, 1 ~ 2]
+
+- id: plots/sqrt_hole
+  input:
+    series:
+    - {expr: sqrt(x**2 - 1)}
+    x_range: [-2, 2]
+    name: sqrt_hole
+  expect: gap (-1,1)
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [no real values, -1 ~ 1]
+
+- id: plots/tanh_like
+  input:
+    series:
+    - {expr: 1/(1 + exp(-50*x))}
+    x_range: [-1, 1]
+    name: tanh_like
+  expect: steep but continuous - no jump
+  correct:
+  - {ok: true}
+  - lacks:
+      path: warnings
+      words: [jumps, diverges]
+
+- id: plots/pole2
+  input:
+    series:
+    - {expr: 1/(x**2 - 2)}
+    x_range: [-3, 3]
+    name: pole2
+  expect: asymptotes ±sqrt2
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, sqrt(2)]
+
+- id: plots/heaviside
+  input:
+    series:
+    - {expr: Heaviside(x)}
+    x_range: [-1, 1]
+    name: heaviside
+  expect: jump at 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [jumps, x = 0]
+
+- id: plots/log_abs
+  input:
+    series:
+    - {expr: log(abs(x))}
+    x_range: [-2, 2]
+    name: log_abs
+  expect: asymptote 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+  severe:
+  - has:
+      path: warnings
+      words: [single point]
+  quick: true
+
+- id: plots/cot
+  input:
+    series:
+    - {expr: cot(x)}
+    x_range: [0.1, 7]
+    name: cot
+  expect: asymptotes pi, 2pi
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, π(, 2π]
+
+- id: plots/xx
+  input:
+    series:
+    - {expr: x**x}
+    x_range: [-2, 2]
+    name: xx
+  expect: real only x>0 (and negative integers)
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [no real values]
+
+- id: plots/big_exp
+  input:
+    series:
+    - {expr: exp(x)}
+    x_range: [0, 50]
+    name: big_exp
+  expect: huge values; clipping?
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [clipped]
+  partial:
+  - {ok: true}
+  note: 'exp(50) ~ 5e21: clipping the axis with a warning is the expected handling.'
+
+- id: plots/removable_far
+  input:
+    series:
+    - {expr: (x**2 - 1e-6)/(x - 0.001)}
+    x_range: [-1, 1]
+    name: removable_far
+  expect: hole at 0.001
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [single point, '0.001']
+  - lacks:
+      path: warnings
+      words: [diverges]
+
+- id: plots/sin_over_sin
+  input:
+    series:
+    - {expr: sin(2*x)/sin(x)}
+    x_range: [-7, 7]
+    name: sin_over_sin
+  expect: holes at multiples of pi (= 2cos x)
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [single point, x = 0, π]
+  - lacks:
+      path: warnings
+      words: [diverges]
+  partial:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [single point, x = 0]
+  - lacks:
+      path: warnings
+      words: [diverges]
+  known_issue: sin(2x)/sin(x) has holes at every multiple of pi in [-7, 7] (0, ±π, ±2π) but only x = 0 is reported.
+
+- id: plots2/log_x2
+  input:
+    series:
+    - {expr: log(x**2)}
+    x_range: [-2, 2]
+    name: log_x2
+  expect: asymptote 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+  severe:
+  - has:
+      path: warnings
+      words: [single point]
+
+- id: plots2/log_abs_shift
+  input:
+    series:
+    - {expr: log(abs(x - 1))}
+    x_range: [-2, 3]
+    name: log_abs_shift
+  expect: asymptote 1
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 1]
+  severe:
+  - has:
+      path: warnings
+      words: [single point]
+
+- id: plots2/log_abs_offgrid
+  input:
+    series:
+    - {expr: log(abs(x - 0.0003))}
+    x_range: [-1, 1]
+    name: log_abs_offgrid
+  expect: asymptote 0.0003
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, '0.0003']
+  severe:
+  - has:
+      path: warnings
+      words: [single point]
+
+- id: plots2/pow_m02
+  input:
+    series:
+    - {expr: abs(x)**(-0.2)}
+    x_range: [-1, 1]
+    name: pow_m02
+  expect: asymptote 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+  severe:
+  - has:
+      path: warnings
+      words: [single point]
+  quick: true
+
+- id: plots2/pow_m05
+  input:
+    series:
+    - {expr: abs(x)**(-0.5)}
+    x_range: [-1, 1]
+    name: pow_m05
+  expect: asymptote 0
+  correct:
+  - {ok: true}
+  - has:
+      path: warnings
+      words: [diverges, x = 0]
+
+- id: plots2/inv_log
+  input:
+    series:
+    - {expr: 1/log(abs(x))}
+    x_range: [-0.5, 0.5]
+    name: inv_log
+  expect: -> 0 at x=0 (removable-ish), asymptote none in range
+  correct:
+  - {ok: true}
+  - lacks:
+      path: warnings
+      words: [diverges]
+  partial:
+  - {ok: true}
+  note: 1/log|x| -> 0 as x -> 0 (a removable point); no asymptote inside [-0.5, 0.5]. Mentioning the single point at 0 is fine.
