@@ -2,7 +2,7 @@
   "mcpServers": {
     "openstem": {
       "command": "uvx",
-      "args": ["openstem-mcp==0.3.2"],
+      "args": ["openstem-mcp==0.3.3"],
       "env": {
         "OPENSTEM_OUTPUT_DIR": "${user_config.output_dir}",
         "OPENSTEM_INPUT_DIR": "${user_config.materials_dir}",

@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-11-04
+
+2026-11-03 기술·보안 감사에서 나온 문제를 고친 릴리스다.
+
 ### 보안
 
 - TeX 코드 검사를 강화했다. 그림 데이터를 표·파일·gnuplot에서 가져오는 문법을 낱말이 아니라 토큰 위치로 판정하고(`coordinates`와 식만 허용), render_tikz와 export_document(암기 카드 배치) 문서에 pgf·pgfplots의 파일 읽기 명령을 끄는 방어선을 넣었다. 이전 검사는 일부 문법에서 PC의 파일을 읽을 수 있었다.
@@ -74,7 +78,8 @@
 - **M5(0.2.0)**: 대학 전공 계산(verify_math: 미분방정식·행렬·라플라스·급수·합·부등식·확률분포), `check_units`, `plot_data`, `read_document`(PDF·한글·워드·파워포인트), export_document pptx·시험지·플래시카드, `exam`·`slides`·`flashcards`·`lab_report` 프롬프트, 다이어그램 템플릿 10개.
 - **M6(0.3.0)**: 원클릭 설치(.mcpb + tectonic 자동 준비), HTTP 모드(ChatGPT 연결), `lms` 툴(Canvas·Moodle 읽기 전용). 완료 기준: .mcpb를 새 폴더에 풀어 manifest의 명령 그대로 띄우면 모든 툴이 되고, HTTP 모드에 MCP 클라이언트로 붙어 툴을 부르고, 가짜 Canvas·Moodle 서버로 lms의 모든 action이 통과.
 
-[Unreleased]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/kimi94279-glitch/openstem-mcp/releases/tag/v0.3.0
