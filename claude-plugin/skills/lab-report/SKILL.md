@@ -11,6 +11,6 @@ Use only data the user provides. Never invent or "clean up" measurements; if som
 2. Derive the quantity the experiment measures (for example g from a slope). Check the algebra with `verify_math` and the units with `check_units`.
 3. Compare with the accepted value: percent error and likely sources of error.
 4. Write the sections in the user's language: purpose, theory, method, data and results (with the plot), discussion, conclusion. Use the section names the user's course expects if they give them.
-5. Export with `export_document` (`format="docx"` unless the user wants pdf) and give the file path.
+5. Export with `export_document` (`format="docx"` unless the user wants pdf) and give the file path. If the materials include a reference file (.bib, .json or .yaml), pass it as `bibliography="refs.bib"` (its path in the materials folder) and cite as [@key]; pick `citation_style` (apa, ieee, mla, chicago) if the course asks for one.
 
 If the openstem tools are not available in this session (for example in claude.ai chat, where only the skills load), say so and point the user to the install guide: https://github.com/kimi94279-glitch/openstem-mcp#설치. Then you can still write the report text from the user's data, but compute by hand, say there is no plot file, and mark the numbers as unverified.
