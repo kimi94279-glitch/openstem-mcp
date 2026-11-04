@@ -308,7 +308,6 @@ cases:
           words: [sampl]
   partial:
   - {ok: true}
-  known_issue: sin(1000x) on [0, 10] (about 1600 periods) is drawn from too few samples with no aliasing warning.
 
 - id: plots/asin_dom
   input:
@@ -474,7 +473,6 @@ cases:
   - lacks:
       path: warnings
       words: [diverges]
-  known_issue: sin(2x)/sin(x) has holes at every multiple of pi in [-7, 7] (0, ±π, ±2π) but only x = 0 is reported.
 
 - id: plots2/log_x2
   input:

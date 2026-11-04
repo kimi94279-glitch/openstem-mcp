@@ -61,6 +61,18 @@ def _listing(values: list[str]) -> str:
     return shown + (f" and {len(values) - MAX_LISTED} more" if len(values) > MAX_LISTED else "")
 
 
+def _pair_signs(labels: list[str]) -> list[str]:
+    """-a와 a가 둘 다 있으면 ±a 하나로 묶는다(구멍 목록: -2π, -π, 0, π, 2π → 0, ±π, ±2π)."""
+    present = set(labels)
+    out = []
+    for label in labels:
+        if label.startswith("-") and label[1:].replace("≈-", "≈") in present:
+            continue  # 양수 쪽에서 ±로 쓴다
+        negative = "-" + label.replace("≈", "≈-")
+        out.append("±" + label if label != "0" and negative in present else label)
+    return out
+
+
 def _num(v: float) -> str:
     text = f"{v:.4g}"
     return "0" if text == "-0" else text
@@ -86,6 +98,7 @@ class Series:
     oscillations: list[str] = field(default_factory=list)
     gaps: list[str] = field(default_factory=list)
     overflow: list[str] = field(default_factory=list)
+    undersampled: float = 0.0  # 표본 사이에서 곡선이 직선과 크게 다른 구간의 비율(0이면 경고 없음)
 
     def warnings(self) -> list[str]:
         out = []
@@ -101,11 +114,17 @@ class Series:
                 "(oscillating discontinuity); line broken, and the curve near that point only shows samples."
             )
         if self.holes:
-            out.append(f"{self.name}: undefined at the single point x = {_listing(self.holes)} (curve drawn through).")
+            points = "point" if len(self.holes) == 1 else "points"
+            out.append(f"{self.name}: undefined at the single {points} x = {_listing(_pair_signs(self.holes))} (curve drawn through).")
         if self.gaps:
             out.append(f"{self.name}: no real values for {_listing(self.gaps)}; not drawn.{_odd_root_hint(self.expr)}")
         if self.overflow:
             out.append(f"{self.name}: values too large for {_listing(self.overflow)}; not drawn.")
+        if self.undersampled:
+            out.append(
+                f"{self.name}: changes faster than the {GRID} sample points can show (in {self.undersampled:.0%} of the gaps between samples "
+                "the curve is far from a straight line), so the plot may show aliasing instead of the true shape. Narrow x_range."
+            )
         return out
 
 
@@ -234,7 +253,21 @@ def _oscillates(func: Any, s: float, scale: float) -> bool:
     return True
 
 
-def _classify_point(func: Any, s: float) -> tuple[str | None, tuple[float, float] | None]:
+def _undefined_at(expr: Any, p: Any) -> bool:
+    """정확한 점 p에서 식의 값이 정의되지 않는가(0/0 등). sin(2x)/sin(x)의 π는 부동소수로는 -2가 나오지만 0/0이다."""
+    import sympy
+
+    symbols = list(getattr(expr, "free_symbols", ()))
+    if len(symbols) != 1:
+        return False
+    try:
+        value = expr.subs(symbols[0], p)
+    except Exception:
+        return False
+    return bool(value.has(sympy.nan, sympy.zoo, sympy.oo, -sympy.oo))
+
+
+def _classify_point(func: Any, s: float, undefined: bool = False) -> tuple[str | None, tuple[float, float] | None]:
     """특이점 후보 s의 종류: diverge | oscillate | jump | hole | None(정의역 경계 등, 따로 보고됨).
 
     jump(abs(x)/x의 0)이면 (왼쪽 값, 오른쪽 값)도 돌려준다.
@@ -260,7 +293,7 @@ def _classify_point(func: Any, s: float) -> tuple[str | None, tuple[float, float
         return "oscillate", None
     if (values := _side_values(func, s, scale)) is not None:
         return "jump", values
-    if not np.isfinite(_at(func, s)):
+    if undefined or not np.isfinite(_at(func, s)):
         return "hole", None
     return None, None
 
@@ -295,6 +328,8 @@ def analyze(s: Series, a: float, b: float, exact: list[Any] | None) -> None:
     for p in exact or []:
         v = float(p)
         kind, values = _classify_point(s.func, v)
+        if kind is None and _undefined_at(s.expr, p):
+            kind, values = _classify_point(s.func, v, undefined=True)
         if kind is None:
             continue
         label = nice(v) if p.is_Rational else f"{p}(≈{v:.4g})".replace("*pi", "π").replace("pi", "π")
@@ -343,6 +378,29 @@ def analyze(s: Series, a: float, b: float, exact: list[Any] | None) -> None:
             _record(s, kind, nice(at), at, values)
             known.append(at)
     s.xs, s.ys = xs, ys
+    if not s.oscillations:
+        s.undersampled = _undersampled(s.func, xs, ys)
+
+
+UNDERSAMPLED_SHARE = 0.05  # 표본 사이 구간 가운데 이만큼 넘게 어긋나면 표본이 모자란다고 본다
+UNDERSAMPLED_GAP = 0.1  # 구간 가운데 값이 양 끝의 평균에서 값 폭(5~95% 분위수)의 이만큼 넘게 벗어나면 어긋남
+
+
+def _undersampled(func: Any, xs: np.ndarray, ys: np.ndarray) -> float:
+    """표본점 사이 가운데 값을 계산해 양 끝을 이은 직선과 비교한다. sin(1000*x)를 [0, 10]에서 그리면 대부분 어긋난다.
+
+    불연속·발산은 몇 구간만 어긋나므로 비율로 가른다. 어긋난 구간의 비율(기준 이하면 0)을 돌려준다.
+    """
+    mids = (xs[:-1] + xs[1:]) / 2
+    ym = _evaluate(func, mids)
+    ok = np.isfinite(ys[:-1]) & np.isfinite(ys[1:]) & np.isfinite(ym)
+    if ok.sum() < 10:
+        return 0.0
+    q5, q95 = np.percentile(ys[np.isfinite(ys)], [5, 95])
+    span = max(q95 - q5, 1e-12)
+    off = np.abs(ym - (ys[:-1] + ys[1:]) / 2) > UNDERSAMPLED_GAP * span
+    share = float((off & ok).sum() / ok.sum())
+    return share if share > UNDERSAMPLED_SHARE else 0.0
 
 
 def _refine_jump(

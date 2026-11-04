@@ -26,7 +26,7 @@ DESCRIPTION = r"""Check the units (dimensions) of a physics/engineering formula,
 Check: {"expr": "sqrt(2*h/g)", "units": {"h": "m", "g": "m/s^2"}, "expect": "s"} → matches; otherwise explanation says which dimensions differ. Units with values ("20 m") also give the numeric result.
 Convert: {"value": "72 km/h", "to": "m/s"}
 Use unit symbols (m, kg, N, J, km/h, m/s^2; dimensionless "1").
-Rotation: Hz counts cycles (60 rpm = 1 Hz = 2π rad/s). Temperature changes: delta_degC. ton is the US short ton; metric tonne is t. Read note and warnings.
+Rotation: Hz counts cycles (60 rpm = 1 Hz = 2π rad/s). Temperature changes: delta_degC. ton is the US short ton; metric tonne is t. Cal (food calorie) = kcal. G = gauss (converts to T). Read note and warnings.
 On failure: errors name the bad input; fix it and call again."""
 
 

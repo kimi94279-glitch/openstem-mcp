@@ -149,7 +149,6 @@ cases:
   - num: {value: 4184, rel: 0.0001, path: magnitude}
   partial:
   - error: [Cal, kcal]
-  known_issue: '''Cal'' (food calorie = kcal) is an unknown unit; the error does not suggest kcal.'
 
 - id: units/atm_pa
   input: {value: 1 atm, to: Pa}
@@ -222,7 +221,6 @@ cases:
     - - num: {value: 100, rel: 0.0001, path: magnitude}
     - - num: {value: 10, rel: 0.0001, path: magnitude}
   note: 100 (power ratio) or 10 (amplitude ratio) are both right; a note that calls dB a temperature is wrong.
-  known_issue: value is right (100) but the note says 'Converted 20 dB as a temperature reading' (the ΔT hint fires for dB).
   quick: true
 
 - id: units/percent
@@ -282,7 +280,6 @@ cases:
   - num: {value: 0.0001, rel: 0.0001, path: magnitude}
   partial:
   - error: [gauss]
-  known_issue: pint reads 'G' as the gravitational constant; conversion fails without suggesting 'gauss'.
 
 - id: units/deg_rad
   input: {value: 180 deg, to: rad}
@@ -513,7 +510,6 @@ cases:
   - eq: {consistent: false}
   severe:
   - eq: {consistent: true}
-  known_issue: x + y - y simplifies to x before the dimension check, so m + s is reported consistent (m).
   quick: true
 
 - id: units/rpm_power
