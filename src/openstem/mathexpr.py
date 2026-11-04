@@ -26,6 +26,7 @@ MAX_LENGTH = 300
 MAX_VARIABLES = 10
 _VARIABLE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9]{0,9}$")
 _RESERVED = {"Integer", "Float", "Rational", "Symbol"}  # parse_expr가 만드는 코드가 쓰는 이름
+_UNEVALUATED_OPS = ("Add", "Mul", "Pow")  # evaluate=False일 때만 쓰는 이름(변수 이름과 겹치면 그 읽기만 포기)
 
 # 이름 → sympy에서의 이름(또는 만드는 법). 값은 _sympy_names()에서 채운다.
 FUNCTIONS = (
@@ -265,9 +266,9 @@ def _sympy_names() -> dict[str, Any]:
         arccos=sympy.acos,
         arctan=sympy.atan,
         ln=sympy.log,
-        log10=lambda a: sympy.log(a, 10),
-        log2=lambda a: sympy.log(a, 2),
-        cbrt=lambda a: sympy.real_root(a, 3),
+        log10=lambda a, **_: sympy.log(a, 10),
+        log2=lambda a, **_: sympy.log(a, 2),
+        cbrt=lambda a, **_: sympy.real_root(a, 3),  # evaluate=False로 읽을 때 evaluate 인자가 붙어 온다
         abs=sympy.Abs,
         ceil=sympy.ceiling,
         min=sympy.Min,
@@ -278,10 +279,11 @@ def _sympy_names() -> dict[str, Any]:
     return names
 
 
-def parse(expr: str, variables: tuple[str, ...] | None = ("x",), positive: bool = False) -> Any:
+def parse(expr: str, variables: tuple[str, ...] | None = ("x",), positive: bool = False, evaluate: bool = True) -> Any:
     """check()를 통과한 식을 sympy 식으로 바꾼다(변수는 실수, positive면 양수). 작업자 안에서만 부른다.
 
     variables가 None이면 식에 나온 이름을 변수로 쓴다.
+    evaluate=False면 x/x, 1/(x-1) - 1/(x-1)처럼 읽는 순간 지워지는 부분을 그대로 남긴다(정의역 조건을 모을 때).
     """
     errors = check(expr, variables)
     if errors:
@@ -307,6 +309,10 @@ def parse(expr: str, variables: tuple[str, ...] | None = ("x",), positive: bool 
         "Rational": sympy.Rational,
         "Symbol": sympy.Symbol,
     }
+    if not evaluate:  # 읽는 코드가 연산을 Add(…, evaluate=False) 꼴로 부른다
+        if clash := sorted(set(variables) & set(_UNEVALUATED_OPS)):
+            raise ExprError(f"Variable name '{clash[0]}' cannot be read unevaluated.")
+        global_dict.update({name: getattr(sympy, name) for name in _UNEVALUATED_OPS})
     text = " ".join(tok.text for tok in tokenize(expr))
     try:
         return parse_expr(
@@ -314,6 +320,7 @@ def parse(expr: str, variables: tuple[str, ...] | None = ("x",), positive: bool 
             local_dict=local,
             global_dict=global_dict,
             transformations=(*standard_transformations, convert_xor, implicit_multiplication),
+            evaluate=evaluate,
         )
     except (SyntaxError, TypeError, ValueError) as exc:
         detail = str(exc).splitlines()[0][:120] if str(exc) else type(exc).__name__

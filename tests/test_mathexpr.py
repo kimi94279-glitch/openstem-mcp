@@ -85,6 +85,17 @@ def test_parse_refuses_unchecked_input():
         parse("__import__('os')")
 
 
+def test_parse_unevaluated_keeps_cancelled_parts():
+    # 읽는 순간 x/x = 1, 1/(x-1) - 1/(x-1) = 0이 되면 분모 조건을 모을 수 없다
+    assert parse("x/x") == 1
+    kept = parse("x/x", None, evaluate=False)
+    assert kept != 1 and any(p.exp == -1 for p in kept.atoms(sympy.Pow))
+    assert parse("cbrt(x)/x + log10(x)", None, evaluate=False).doit() == parse("cbrt(x)/x + log10(x)", None)
+    with pytest.raises(ExprError, match="unevaluated"):
+        parse("Add/x", None, evaluate=False)
+    assert parse("Add/x", None).free_symbols  # 보통 읽기에서는 변수 이름 그대로 쓴다
+
+
 @pytest.mark.parametrize(
     ("value", "text"),
     [(0.0, "0"), (2.0, "2"), (-3.0, "-3"), (math.pi / 2, "π/2(≈1.571)"), (-3 * math.pi / 2, "-3π/2(≈-4.712)"),

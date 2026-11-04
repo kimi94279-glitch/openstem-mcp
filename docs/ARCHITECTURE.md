@@ -191,6 +191,7 @@ export_document의 처리 순서다. 왜 정규식이 아니라 문서 구조를
 |---|---|---|
 | `OPENSTEM_OUTPUT_DIR` | 결과물 폴더 | `~/OpenSTEM` |
 | `OPENSTEM_INPUT_DIR` | 자료 폴더(read_document가 여는 곳) | `<결과물 폴더>/자료` |
+| `OPENSTEM_READ_CACHE` | `0`이면 read_document 추출 결과 캐시(캐시 폴더 `read-cache/`, 200 MB LRU)를 끈다 | 켜짐 |
 | `OPENSTEM_TIMEOUT` | 외부 입력 처리 시간 제한(초) | 20 |
 | `OPENSTEM_RECORD` | `0`이면 재현 기록(`<stem>.json`·원본 파일)을 남기지 않는다 | 켬 |
 | `OPENSTEM_WORKER_MEMORY_MB` | 파이썬 작업자 메모리 상한(MB, POSIX RLIMIT_AS·Windows Job Object). 0이면 끔 | 3072 |

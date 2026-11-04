@@ -16,6 +16,7 @@ import subprocess
 import sys
 import zipfile
 import zlib
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Any
 from xml.etree import ElementTree
@@ -25,7 +26,8 @@ import pymupdf
 
 from openstem.workers import WorkerError, serve
 
-MAX_UNPACKED = 100 * 1024 * 1024  # 압축을 푼 크기 상한(압축 폭탄 방지)
+MAX_UNPACKED = 100 * 1024 * 1024  # 압축을 푼 크기 상한(압축 폭탄 방지). HWP는 섹션 하나, HWPX는 본문 전체
+MAX_UNPACKED_TOTAL = 200 * 1024 * 1024  # HWP 섹션들을 다 합친 상한(섹션마다 100 MB씩 수십 개를 막는다)
 MAX_IMAGE_PAGES = 4
 IMAGE_DPI = 110
 IMAGE_MAX_PX = 1600
@@ -108,12 +110,32 @@ def hwp_records(data: bytes) -> list[str]:
     return texts
 
 
-def _inflate(data: bytes) -> bytes:
+TOO_LARGE_TOTAL = f"The HWP file is too large when unpacked (over {MAX_UNPACKED_TOTAL // 1024 // 1024} MB in total)."
+
+
+def _inflate(data: bytes, limit: int = MAX_UNPACKED) -> bytes:
     inflater = zlib.decompressobj(-15)
-    out = inflater.decompress(data, MAX_UNPACKED)
+    out = inflater.decompress(data, limit)
     if inflater.unconsumed_tail:
-        raise WorkerError(["The HWP file is too large when unpacked."])
+        raise WorkerError([TOO_LARGE_TOTAL if limit < MAX_UNPACKED else "The HWP file is too large when unpacked."])
     return out
+
+
+def hwp_body(streams: Iterable[bytes], compressed: bool) -> list[str]:
+    """BodyText 섹션 스트림들의 문단 글자. 푼 크기는 섹션마다 MAX_UNPACKED, 합쳐서 MAX_UNPACKED_TOTAL까지."""
+    paragraphs: list[str] = []
+    total = 0
+    for data in streams:
+        left = MAX_UNPACKED_TOTAL - total
+        if left <= 0 and data:  # zlib은 길이 0을 '제한 없음'으로 읽는다
+            raise WorkerError([TOO_LARGE_TOTAL])
+        if compressed:
+            data = _inflate(data, min(MAX_UNPACKED, left))
+        elif len(data) > left:
+            raise WorkerError([TOO_LARGE_TOTAL])
+        total += len(data)
+        paragraphs += hwp_records(data)
+    return paragraphs
 
 
 def _hwp(path: Path) -> str:
@@ -131,10 +153,7 @@ def _hwp(path: Path) -> str:
             )
         sections = [e for e in ole.listdir() if len(e) == 2 and e[0] == "BodyText" and e[1].startswith("Section")]
         sections.sort(key=lambda e: int(re.sub(r"\D", "", e[1]) or 0))
-        paragraphs: list[str] = []
-        for entry in sections:
-            data = ole.openstream(entry).read()
-            paragraphs += hwp_records(_inflate(data) if flags & 0x1 else data)
+        paragraphs = hwp_body((ole.openstream(entry).read() for entry in sections), bool(flags & 0x1))
     return "\n".join(paragraphs)
 
 

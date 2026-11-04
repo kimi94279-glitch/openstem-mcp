@@ -532,7 +532,7 @@
 
 - id: inequality-transcendental-numeric
   input: {op: solve, expr: "sin(x) > x/2"}
-  expect: {ok: true, result: "(-10, -1.895494) ∪ (0, 1.895494)", contains: ["searched numerically"]}
+  expect: {ok: true, result: "(-1000, -1.895494) ∪ (0, 1.895494)", contains: ["searched numerically in [-1000, 1000]", "still holds at x = -1000"]}
 
 - id: error-inequality-with-parameter
   input: {op: solve, expr: "x**2 < a"}
@@ -695,3 +695,57 @@
 - id: huge-factorial-rejected
   input: {op: evaluate, expr: "factorial(10**8)"}
   expect: {ok: false, errors_contain: ["far too large"]}
+
+# ── 읽는 순간 지워지는 분모·로그·제곱근(정의역) ──────────────────────
+- id: solve-cancelled-denominator-drops-fake-root
+  input: {op: solve, expr: "1/(x-1) = 1/(x-1) + x - 1"}
+  expect: {ok: true, solutions: [], contains: ["x - 1 ≠ 0", "No real solutions"]}
+
+- id: solve-cancelled-factor-keeps-real-root
+  input: {op: solve, expr: "x**2 = x*(x-1)/(x-1)"}
+  expect: {ok: true, solutions: ["0"], contains: ["dropped x = 1"]}
+
+- id: solve-x-over-x-excludes-zero
+  input: {op: solve, expr: "x/x = 1"}
+  expect: {ok: true, result: "(-oo, 0) ∪ (0, oo)", contains: ["x ≠ 0"], excludes: ["Every real number is a solution"]}
+
+- id: solve-log-times-zero-needs-positive
+  input: {op: solve, expr: "log(x)*0 = 0"}
+  expect: {ok: true, result: "(0, oo)", contains: ["x > 0"]}
+
+- id: solve-abs-identity-is-an-interval
+  input: {op: solve, expr: "abs(x) = x"}
+  expect: {ok: true, result: "[0, oo)", excludes: ["approx"]}
+
+- id: inequality-cancelled-denominator
+  input: {op: solve, expr: "x/x > 0"}
+  expect: {ok: true, result: "(-oo, 0) ∪ (0, oo)", contains: ["x ≠ 0"]}
+
+- id: equal-sqrt-times-sqrt-notes-domain
+  input: {op: equal, expr: "sqrt(x)*sqrt(x)", against: "x"}
+  expect: {ok: true, matches: true, contains: ["expr is undefined for x in (-oo, 0)", "x ≥ 0"]}
+
+- id: equal-exp-log-notes-domain
+  input: {op: equal, expr: "exp(log(x))", against: "x"}
+  expect: {ok: true, matches: true, contains: ["expr is undefined for x in (-oo, 0]", "x > 0"]}
+
+- id: equal-removable-singularity-notes-domain
+  input: {op: equal, expr: "(x**2-1)/(x-1)", against: "x+1"}
+  expect: {ok: true, matches: true, contains: ["undefined for x in {1}"]}
+
+- id: equal-same-domain-no-note
+  input: {op: equal, expr: "1/x", against: "2/(2*x)"}
+  expect: {ok: true, matches: true, excludes: ["undefined", "needs"]}
+
+- id: equal-several-variables-cancelled-denominator
+  input: {op: equal, expr: "a*b/b", against: "a"}
+  expect: {ok: true, matches: true, contains: ["expr needs b ≠ 0"]}
+
+# ── 수치 탐색 범위 넓히기 ──────────────────────────────
+- id: solve-numeric-root-beyond-ten
+  input: {op: solve, expr: "exp(x) = x**10"}
+  expect: {ok: true, approx: 35.77152064, contains: ["[-1000, 1000]"]}
+
+- id: inequality-numeric-interval-beyond-ten
+  input: {op: solve, expr: "exp(x) > x**10"}
+  expect: {ok: true, result: "(-0.9127653, 1.118326) ∪ (35.77152, 1000]", contains: ["still holds at x = 1000", "may continue beyond"]}
