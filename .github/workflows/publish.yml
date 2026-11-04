@@ -10,6 +10,14 @@ name: Publish
 on:
   release:
     types: [published]
+  # Actions 화면의 "Run workflow"(또는 API)로도 릴리스한다: 이 워크플로가 v<버전> 태그와 GitHub 릴리스를 만들고
+  # 이어서 배포한다. GITHUB_TOKEN으로 만든 릴리스는 다른 워크플로를 다시 깨우지 않으므로 같은 실행 안에서 끝까지 간다.
+  # 릴리스 본문은 .github/release-notes/v<버전>.md에서 읽는다.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "릴리스할 버전(예: 0.3.3). src/openstem/__init__.py의 __version__과 같아야 한다"
+        required: true
 
 permissions:
   contents: read
@@ -20,8 +28,30 @@ jobs:
     permissions:
       contents: read
 
-  publish:
+  # workflow_dispatch일 때만: 버전을 확인하고 태그·릴리스를 만든다(release 이벤트면 이미 있으므로 건너뛴다).
+  release:
+    if: github.event_name == 'workflow_dispatch'
     needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # 태그와 릴리스 만들기
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check version and notes
+        run: |
+          grep -qx "__version__ = \"$VERSION\"" src/openstem/__init__.py || { echo "src/openstem/__init__.py의 버전이 $VERSION이 아니다"; exit 1; }
+          test -f ".github/release-notes/v$VERSION.md" || { echo "릴리스 노트가 없다: .github/release-notes/v$VERSION.md"; exit 1; }
+      - name: Create tag and release
+        run: gh release create "v$VERSION" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --title "openstem-mcp $VERSION" --notes-file ".github/release-notes/v$VERSION.md"
+
+  publish:
+    needs: [test, release]
+    if: ${{ !cancelled() && needs.test.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -36,10 +66,13 @@ jobs:
       - run: uv publish --trusted-publishing always
 
   bundle:
-    needs: test
+    needs: [test, release]
+    if: ${{ !cancelled() && needs.test.result == 'success' && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write  # 릴리스에 파일 올리기
+    env:
+      TAG: ${{ github.event.release.tag_name || format('v{0}', inputs.version) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
@@ -50,7 +83,7 @@ jobs:
           node-version: 22
       # 공식 CLI(npx @anthropic-ai/mcpb@<고정 버전>, scripts/build_mcpb.py의 MCPB_CLI)로 검사·묶기. 빌드 스크립트는 표준 라이브러리만 쓴다.
       - run: uv run --no-project python scripts/build_mcpb.py
-      - run: gh release upload "${{ github.event.release.tag_name }}" dist/*.mcpb
+      - run: gh release upload "$TAG" dist/*.mcpb --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -58,13 +91,14 @@ jobs:
   # PyPI 소유 확인은 README의 `mcp-name:` 줄, .mcpb는 릴리스에 붙은 파일의 sha256으로 한다.
   registry:
     needs: [publish, bundle]
+    if: ${{ !cancelled() && needs.publish.result == 'success' && needs.bundle.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
     env:
       GH_TOKEN: ${{ github.token }}
-      TAG: ${{ github.event.release.tag_name }}
+      TAG: ${{ github.event.release.tag_name || format('v{0}', inputs.version) }}
       MCP_PUBLISHER_VERSION: v1.8.7
       # 버전을 올리면 같이 고친다: 릴리스의 registry_<버전>_checksums.txt에서 mcp-publisher_linux_amd64.tar.gz 줄
       MCP_PUBLISHER_SHA256: 00b21004149a4ce66f0782508ae4a2bce67d1bea395a8da0bd8028159fb59579
