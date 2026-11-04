@@ -454,3 +454,69 @@ def test_real_download_runs(tmp_path):
     res = latex.sandbox.run([str(path), "--version"], cwd=tmp_path, timeout=60)
     assert res.returncode == 0 and tectonic_setup.VERSION in res.stdout
     assert leftovers(tmp_path / "bin") == [EXE]
+
+
+# ── 설치 찌꺼기 정리 ─────────────────────────────────────────────────
+
+
+def _aged(path: Path, seconds: float, data: bytes = b"partial") -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(data)
+    old = path.stat().st_mtime - seconds
+    os.utime(path, (old, old))
+    return path
+
+
+def test_remove_leftovers_deletes_only_old_partial_files(tmp_path):
+    bin_dir = tmp_path / "bin"
+    old_parts = [_aged(bin_dir / f".download-{i}.part", 2 * 3600) for i in range(3)]
+    old_exe_tmp = _aged(bin_dir / ".tectonic-abc", 2 * 3600)
+    fresh = _aged(bin_dir / ".download-fresh.part", 60)  # 다른 설치가 지금 받는 중일 수 있다
+    lock = _aged(bin_dir / tectonic_setup.LOCK_NAME, 2 * 3600, b"")
+    exe = _aged(bin_dir / EXE, 2 * 3600, FAKE_EXE)
+    other = _aged(bin_dir / "notes.txt", 2 * 3600)
+    removed = tectonic_setup.remove_leftovers(bin_dir)
+    assert sorted(removed) == sorted([*old_parts, old_exe_tmp])
+    assert all(p.exists() for p in (fresh, lock, exe, other))
+
+
+def test_install_cleans_old_leftovers_first(server, tmp_path):
+    data = make_targz({f"tectonic-0.17.0/{EXE}": FAKE_EXE})
+    url = server.put("t.tar.gz", data)
+    bin_dir = tmp_path / "bin"
+    for i in range(6):  # 감사 중 실제로 본 상태: 끊긴 내려받기 6개
+        _aged(bin_dir / f".download-old{i}.part", 3 * 3600)
+    tectonic_setup.install(bin_dir, asset=asset_of("t.tar.gz", data), url=url, probe=False)
+    assert leftovers(bin_dir) == [EXE]
+
+
+def test_already_installed_still_cleans_leftovers(tmp_path):
+    bin_dir = tmp_path / "bin"
+    _aged(bin_dir / EXE, 0, FAKE_EXE)
+    _aged(bin_dir / ".download-old.part", 3 * 3600)
+    tectonic_setup.install(bin_dir, asset=asset_of("t.tar.gz", b""), url="http://127.0.0.1:9/never", probe=False)
+    assert leftovers(bin_dir) == [EXE]
+
+
+def test_interrupted_download_leaves_no_partial_file(server, tmp_path, monkeypatch):
+    """받는 도중 Ctrl+C(KeyboardInterrupt)가 와도 .part를 지운다."""
+    data = make_zip({EXE: FAKE_EXE})
+    url = server.put("t.zip", data)
+    bin_dir = tmp_path / "bin"
+    asset = asset_of("t.zip", data)
+    real_sha256 = tectonic_setup.hashlib.sha256
+
+    class Interrupting:
+        def __init__(self) -> None:
+            self._h = real_sha256()
+
+        def update(self, chunk: bytes) -> None:
+            raise KeyboardInterrupt
+
+        def hexdigest(self) -> str:
+            return self._h.hexdigest()
+
+    monkeypatch.setattr(tectonic_setup.hashlib, "sha256", Interrupting)
+    with pytest.raises(KeyboardInterrupt):
+        tectonic_setup.install(bin_dir, asset=asset, url=url, probe=False)
+    assert leftovers(bin_dir) == []

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import atexit
 import json
+import logging
 import os
 import re
 import subprocess
@@ -119,7 +120,7 @@ _spares_lock = threading.Lock()
 
 def _spawn(module: str) -> subprocess.Popen[bytes]:
     kwargs: dict = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-    return subprocess.Popen(
+    proc = subprocess.Popen(
         [sys.executable, "-I", "-m", module],
         cwd=tempfile.gettempdir(),
         stdin=subprocess.PIPE,
@@ -128,6 +129,142 @@ def _spawn(module: str) -> subprocess.Popen[bytes]:
         env=child_env({"MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"}),
         **kwargs,
     )
+    if sys.platform == "win32":
+        confine_windows(proc)
+    return proc
+
+
+# ── Windows 작업자 메모리 상한(Job Object) ───────────────────────────
+# POSIX 작업자는 workers.serve()가 RLIMIT_AS를 스스로 건다. Windows에는 그것이 없어서 서버가 작업자를 띄운 직후
+# Job Object 하나에 넣는다: 프로세스마다 커밋 메모리 상한(JOB_OBJECT_LIMIT_PROCESS_MEMORY, 넘으면 할당 실패 →
+# 파이썬 MemoryError → "too large to compute")과, 서버가 끝나 job 핸들이 닫히면 작업자도 같이 끝나게 하는
+# KILL_ON_JOB_CLOSE. job은 서버 프로세스에 하나만 만들어 끝까지 연다(닫으면 작업자가 다 죽는다).
+# 실패하면(중첩 job을 못 쓰는 Windows 7 등) 상한 없이 그대로 돌리고 경고를 한 번만 남긴다.
+
+log = logging.getLogger(__name__)
+
+JOB_OBJECT_LIMIT_PROCESS_MEMORY = 0x00000100
+JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x00002000
+JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS = 9
+
+
+def job_limits(memory_mb: int) -> tuple[int, int]:
+    """(LimitFlags, ProcessMemoryLimit 바이트). memory_mb가 0 이하면 메모리 상한 없이 KILL_ON_JOB_CLOSE만."""
+    if memory_mb <= 0:
+        return JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE, 0
+    return JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE | JOB_OBJECT_LIMIT_PROCESS_MEMORY, memory_mb * 1024 * 1024
+
+
+class _Win32Job:
+    """ctypes로 Job Object를 만들고 프로세스를 넣는다. Windows에서만 만든다(시험은 가짜로 바꿔 끼운다)."""
+
+    def __init__(self, memory_mb: int) -> None:
+        import ctypes
+        from ctypes import wintypes
+
+        class IO_COUNTERS(ctypes.Structure):
+            _fields_ = [(name, ctypes.c_ulonglong) for name in (
+                "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+                "ReadTransferCount", "WriteTransferCount", "OtherTransferCount",
+            )]  # fmt: skip
+
+        class JOBOBJECT_BASIC_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("PerProcessUserTimeLimit", ctypes.c_int64),
+                ("PerJobUserTimeLimit", ctypes.c_int64),
+                ("LimitFlags", wintypes.DWORD),
+                ("MinimumWorkingSetSize", ctypes.c_size_t),
+                ("MaximumWorkingSetSize", ctypes.c_size_t),
+                ("ActiveProcessLimit", wintypes.DWORD),
+                ("Affinity", ctypes.c_size_t),
+                ("PriorityClass", wintypes.DWORD),
+                ("SchedulingClass", wintypes.DWORD),
+            ]
+
+        class JOBOBJECT_EXTENDED_LIMIT_INFORMATION(ctypes.Structure):
+            _fields_ = [
+                ("BasicLimitInformation", JOBOBJECT_BASIC_LIMIT_INFORMATION),
+                ("IoInfo", IO_COUNTERS),
+                ("ProcessMemoryLimit", ctypes.c_size_t),
+                ("JobMemoryLimit", ctypes.c_size_t),
+                ("PeakProcessMemoryUsed", ctypes.c_size_t),
+                ("PeakJobMemoryUsed", ctypes.c_size_t),
+            ]
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.CreateJobObjectW.restype = wintypes.HANDLE
+        kernel32.CreateJobObjectW.argtypes = [ctypes.c_void_p, wintypes.LPCWSTR]
+        kernel32.SetInformationJobObject.restype = wintypes.BOOL
+        kernel32.SetInformationJobObject.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+        kernel32.QueryInformationJobObject.restype = wintypes.BOOL
+        kernel32.QueryInformationJobObject.argtypes = [
+            wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
+        ]
+        kernel32.AssignProcessToJobObject.restype = wintypes.BOOL
+        kernel32.AssignProcessToJobObject.argtypes = [wintypes.HANDLE, wintypes.HANDLE]
+        self._ctypes = ctypes
+        self._kernel32 = kernel32
+        self._info_type = JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+
+        handle = kernel32.CreateJobObjectW(None, None)
+        if not handle:
+            raise ctypes.WinError(ctypes.get_last_error())
+        self.handle = handle
+        flags, limit = job_limits(memory_mb)
+        info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION()
+        info.BasicLimitInformation.LimitFlags = flags
+        info.ProcessMemoryLimit = limit
+        if not kernel32.SetInformationJobObject(
+            handle, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS, ctypes.byref(info), ctypes.sizeof(info)
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def assign(self, proc: subprocess.Popen[bytes]) -> None:
+        ctypes = self._ctypes
+        if not self._kernel32.AssignProcessToJobObject(self.handle, int(proc._handle)):  # type: ignore[attr-defined]
+            raise ctypes.WinError(ctypes.get_last_error())
+
+    def limits(self) -> tuple[int, int]:
+        """(LimitFlags, ProcessMemoryLimit) — 시험·진단용으로 job에 실제로 걸린 값을 읽는다."""
+        ctypes = self._ctypes
+        info = self._info_type()
+        if not self._kernel32.QueryInformationJobObject(
+            self.handle, JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS, ctypes.byref(info), ctypes.sizeof(info), None
+        ):
+            raise ctypes.WinError(ctypes.get_last_error())
+        return info.BasicLimitInformation.LimitFlags, info.ProcessMemoryLimit
+
+
+_job: Any = None  # 서버에 하나. 만들지 못했으면 False(다시 시도하지 않는다)
+_job_lock = threading.Lock()
+_job_factory: Any = _Win32Job
+
+
+def confine_windows(proc: subprocess.Popen[bytes]) -> bool:
+    """작업자를 메모리 상한 job에 넣는다. 넣었으면 True. 실패하면 경고 한 줄(처음 한 번)만 남기고 False."""
+    global _job
+    # openstem.workers 패키지는 가벼운 설정 함수만 쓴다(무거운 라이브러리는 각 작업자 모듈이 import한다).
+    from openstem.workers import memory_limit_mb
+
+    with _job_lock:
+        if _job is None:
+            try:
+                _job = _job_factory(memory_limit_mb())
+            except (OSError, AttributeError, ValueError) as exc:
+                _job = False
+                log.warning("Worker memory limit is off: could not create a Windows job object (%s).", exc)
+        job = _job
+    if job is False:
+        return False
+    try:
+        job.assign(proc)
+    except (OSError, AttributeError, ValueError) as exc:
+        with _job_lock:
+            if _job is job:
+                _job = False  # 같은 경고를 작업자마다 남기지 않는다
+        log.warning("Worker memory limit is off: could not put the worker into the job object (%s).", exc)
+        return False
+    return True
 
 
 def _take_worker(module: str) -> subprocess.Popen[bytes]:

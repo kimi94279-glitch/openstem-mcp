@@ -156,3 +156,24 @@ async def test_cheatsheet_prompt_includes_material():
         prompt = await client.get_prompt("cheatsheet", {"material": "일반물리 운동학"})
         text = prompt.messages[0].content.text
         assert "일반물리 운동학" in text and "export_document" in text and "cheatsheet" in text
+
+
+def test_doctor_flag_runs_the_diagnosis(monkeypatch):
+    """--doctor는 서버를 띄우지 않고 진단만 한다. --json·--offline은 진단으로 넘어간다."""
+    import sys
+
+    from openstem import doctor, server
+
+    seen = {}
+
+    def fake_main(argv, workers):
+        seen.update(argv=list(argv), workers=list(workers))
+        return 3
+
+    monkeypatch.setattr(doctor, "main", fake_main)
+    monkeypatch.setattr(server.mcp, "run", lambda *a, **k: pytest.fail("server must not start"))
+    monkeypatch.setattr(sys, "argv", ["openstem-mcp", "--doctor", "--json", "--offline"])
+    with pytest.raises(SystemExit) as exc:
+        server.main()
+    assert exc.value.code == 3
+    assert seen["argv"] == ["--doctor", "--json", "--offline"] and seen["workers"] == server.WORKERS
