@@ -1,4 +1,4 @@
-"""export_document: 마크다운(수식·그림 포함)을 pdf·docx·pptx로 내보낸다.
+"""export_document: 마크다운(수식·그림 포함)을 pdf·docx·pptx·hwpx(한글)로 내보낸다.
 
 1. pandoc으로 마크다운을 문서 구조(JSON)로 읽는다(raw TeX·HTML·YAML 머리말은 끈다).
 2. 구조 안의 모든 그림·수식을 검사한다: 그림은 결과물 폴더(OPENSTEM_OUTPUT_DIR) 안 파일만, 수식은
@@ -8,6 +8,7 @@
    (render/*.lua)가 만들고, 서버는 필터가 쓸 표시(클래스)만 붙인다.
 4. 그림을 작업 폴더로 옮겨(형식 변환은 작업자에서) 구조의 경로를 바꾼 뒤, 그 구조를 docx·pptx나 LaTeX로 바꾼다.
 5. PDF는 render_tikz와 같은 latex.compile_tex(tectonic --untrusted, 타임아웃, 에러 줄 추출)로 만든다.
+6. HWPX는 render/hwpx.py가 구조를 OWPML로 직접 쓴다(pandoc에 HWPX 작성기가 없다). 수식은 한컴 수식 또는 수식 그림.
 
 참고문헌(bibliography): 자료·결과물 폴더 안의 .bib·.json(CSL JSON)·.yaml 파일을 서버가 검사해 작업 폴더로 복사하고,
 1단계 pandoc(--sandbox)이 --citeproc으로 인용과 참고문헌 목록을 구조 안에 넣는다. 그 뒤 2단계 검사(수식·그림)를
@@ -30,13 +31,13 @@ from typing import Any
 from urllib.parse import unquote
 
 from openstem import output, sandbox, texcheck
-from openstem.render import latex, pages
+from openstem.render import hwpx, latex, pages
 from openstem.tools import ToolResult, documents
 from openstem.tools.tikz import FILE_GUARD, HANGUL_SETUP, hangul_to_text
 
-FORMATS = ("pdf", "docx", "pptx")
+FORMATS = ("pdf", "docx", "pptx", "hwpx")
 LAYOUTS = ("document", "cheatsheet", "exam", "flashcards")
-LAYOUT_FORMATS = {"exam": ("pdf", "docx"), "flashcards": ("pdf",)}  # 이 밖의 배치는 모든 형식
+LAYOUT_FORMATS = {"exam": ("pdf", "docx", "hwpx"), "flashcards": ("pdf",)}  # 이 밖의 배치는 모든 형식
 MAX_MARKDOWN = 100_000
 MAX_TITLE = 200
 MAX_IMAGES = 30
@@ -135,8 +136,9 @@ COMPILE_HINT = "The `!` line is the cause. Find what it shows (usually math) in 
 EXAM_EXAMPLE = "## Problem 1 (5 pts)\\n\\nProblem text\\n\\n## Problem 2 (5 pts) {space=1}\\n\\n…\\n\\n# 정답과 해설\\n\\n## Problem 1\\n\\n**Answer** …\\n\\nSolution …"
 FLASHCARDS_EXAMPLE = "## Kinematics\\n\\n| Front | Back |\\n|---|---|\\n| Displacement at constant acceleration | $s = v_0 t + \\\\tfrac12 a t^2$ |"
 
-DESCRIPTION = r"""Save markdown (math $...$, images ![caption](path from render_*/plot_*), tables) as pdf, docx or pptx; pdf returns a first-page preview.
+DESCRIPTION = r"""Save markdown (math $...$, images ![caption](path from render_*/plot_*), tables) as pdf, docx, pptx or hwpx; pdf returns a first-page preview.
 Example: {"markdown": "## Summary\n$t=\\sqrt{2h/g}$", "format": "pdf", "title": "Mechanics"}
+hwpx: Korean Hangul (한글) file for school submissions, layout document or exam only; simple math becomes editable Hangul equations, the rest math images.
 pptx: each ## heading is a slide. layout: cheatsheet (one A4 page, pdf), exam (## problems, then a `# 정답과 해설` or `# Answers` heading), flashcards (2-column table, pdf).
 Citations: bibliography = a .bib, CSL .json or .yaml file in the materials folder; cite as [@key], [@key, p. 3] or @key. A reference list is added at the end. citation_style: chicago (default, author-date), apa, ieee, mla.
 docx/pptx use a clean built-in style (Malgun Gothic, 16:9 slides); template = a .docx/.pptx in the materials folder to use its styles instead.
@@ -165,7 +167,9 @@ def validate(markdown: str, fmt: str, title: str | None, layout: str) -> list[st
         errors.append(f"format must be one of: {', '.join(FORMATS)}.")
     if layout not in LAYOUTS:
         errors.append(f"layout must be one of: {', '.join(LAYOUTS)}.")
-    elif fmt in FORMATS and fmt not in LAYOUT_FORMATS.get(layout, FORMATS):
+    elif fmt == "hwpx" and layout not in HWPX_LAYOUTS:
+        errors.append(f'format="hwpx" supports layout {" or ".join(HWPX_LAYOUTS)} only (use format="pdf" for {layout}).')
+    elif fmt in FORMATS and fmt != "hwpx" and fmt not in LAYOUT_FORMATS.get(layout, FORMATS):
         if layout == "flashcards":
             errors.append('layout="flashcards" needs format="pdf" (it makes a card PDF plus a .txt for flashcard apps).')
         else:
@@ -708,6 +712,61 @@ def _read_log(workdir: Path) -> str:
     return log.read_text(encoding="utf-8", errors="replace") if log.exists() else ""
 
 
+# ── HWPX(한글) ──────────────────────────────────────────────────────
+
+HWPX_LAYOUTS = ("document", "exam")
+HWPX_NOTE = "Made without opening it in Hancom Office (Hangul). Ask the user to open the .hwpx in Hangul and check the layout before submitting."
+
+
+def export_hwpx(
+    ast: dict[str, Any], workdir: Path, title: str | None, layout: str, dest: Path
+) -> tuple[list[str], list[str], dict[str, Any]]:
+    """검사를 마친 구조(그림은 작업 폴더의 PNG)를 HWPX로 쓴다. (errors, warnings, 결과 값).
+
+    수식은 단순하면 한컴 수식 객체로, 아니면 render_tikz와 같은 컴파일 경로(texcheck를 마친 수식만)로 PNG를 만들어 넣는다.
+    """
+    maths: list[dict[str, Any]] = []
+    _walk(ast, lambda n: maths.append(n) if n["t"] == "Math" else None)
+    plan: dict[int, hwpx.Equation | hwpx.Picture | None] = {}
+    need_images = []
+    for node in maths:
+        equation = hwpx.latex_to_hwpeq(node["c"][1])
+        if equation is not None:
+            plan[id(node)] = equation
+        else:
+            need_images.append(node)
+    warnings: list[str] = []
+    if need_images:
+        if not latex.BACKGROUND_WARMUP.wait(40.0):
+            return ["First-run setup: downloading TeX packages (once, 3-5 min). Tell the user, then call again in about a minute."], [], {}
+        items = [(n["c"][1], n["c"][0]["t"] == "DisplayMath") for n in need_images]
+        hangul = bool(_HANGUL_RE.search("".join(tex for tex, _ in items)))
+        pictures, errors, compile_warnings = hwpx.render_math_images(items, workdir, hangul=hangul, timeout=EXPORT_TIMEOUT)
+        if errors:
+            return errors, compile_warnings, {"compile_failed": True}
+        warnings += compile_warnings
+        plan.update({id(n): pic for n, pic in zip(need_images, pictures, strict=True)})
+
+    pictures_by_name: dict[str, hwpx.Picture] = {}
+    images: list[dict[str, Any]] = []
+    _walk(ast, lambda n: images.append(n) if n["t"] == "Image" else None)
+    for node in images:
+        name = node["c"][2][0]
+        if name not in pictures_by_name:
+            try:
+                pictures_by_name[name] = hwpx.picture_from_file(workdir / name)
+            except (OSError, ValueError):
+                return [f"Could not read image {name} for hwpx (png and jpg only)."], [], {}
+
+    info = hwpx.write_hwpx(ast, dest, title=title, pictures=pictures_by_name, math=lambda n: plan.get(id(n)), exam=layout == "exam")
+    if info.equations or info.math_images:
+        warnings.append(
+            f"Math: {info.equations} formula(s) became editable Hangul equations, {info.math_images} were inserted as images "
+            "(not editable in Hangul; complex math such as sums, integrals, matrices or accents is always an image)."
+        )
+    return [], warnings, {"equations": info.equations, "math_images": info.math_images}
+
+
 def export_document(
     markdown: str,
     format: str = "pdf",
@@ -749,7 +808,7 @@ def export_document(
             if format == "pptx":
                 warnings += slide_warnings(ast)
             for i, (node, src) in enumerate(images, start=1):
-                node["c"][2][0] = _prepare_image(src, format, workdir, i)
+                node["c"][2][0] = _prepare_image(src, "docx" if format == "hwpx" else format, workdir, i)
             stem = output.new_stem(name or title, default="cards" if layout == "flashcards" else "document")
             if format in ("docx", "pptx"):
                 args = [*_write_ast(ast, workdir), *_title_args(title), "-t", format, "-o", f"out.{format}"]
@@ -764,6 +823,13 @@ def export_document(
                 shutil.copyfile(workdir / f"out.{format}", path)
                 if format == "pptx":
                     data["slides"] = count_slides(path)
+            elif format == "hwpx":
+                path = stem.with_suffix(".hwpx")
+                errors, pandoc_warnings, hwpx_info = export_hwpx(ast, workdir, title, layout, path)
+                if errors:
+                    return ToolResult.failure(errors, COMPILE_HINT if hwpx_info.get("compile_failed") else INPUT_HINT)
+                data.update(hwpx_info)
+                data["note"] = HWPX_NOTE
             else:
                 errors, pandoc_warnings, source = to_latex(ast, workdir, title, layout, hangul)
                 if errors:
@@ -808,7 +874,7 @@ def export_document(
     warnings += pandoc_warnings
     if warnings:
         data["warnings"] = warnings[:10]
-    result_keys = ("format", "layout", "pages", "slides", "answer_page", "problems", "cards", "references", "citations")
+    result_keys = ("format", "layout", "pages", "slides", "answer_page", "problems", "cards", "references", "citations", "equations", "math_images")
     output.save_record(
         data,
         stem,
@@ -819,7 +885,7 @@ def export_document(
             **({"template": template} if template else {}),
         },
         results={**{k: data[k] for k in result_keys if k in data}, "images": [str(src) for _node, src in images]},
-        versions={"pandoc": output.pandoc_version(), **({"tectonic": output.tectonic_version()} if format == "pdf" else {})},
+        versions={"pandoc": output.pandoc_version(), **({"tectonic": output.tectonic_version()} if format == "pdf" or data.get("math_images") else {})},
         # 이미지 경로는 결과물 폴더 기준 상대 경로로 바꿔 둔다(그대로 export_document에 다시 넘길 수 있다).
         sources={".md": output.portable(markdown)},
     )
@@ -838,6 +904,8 @@ def _check_text(fmt: str, layout: str, data: dict[str, Any]) -> str:
         )
     if fmt == "docx":
         return "docx has no preview. To check the layout, also export the same markdown with format=pdf."
+    if fmt == "hwpx":
+        return "hwpx has no preview. To check the layout, also export the same markdown with format=pdf; tell the user to open the .hwpx in Hangul."
     if layout == "exam":
         page = data.get("answer_page")
         sheet = "page 1" if page == 2 else f"pages 1-{page - 1}" if page else ""
