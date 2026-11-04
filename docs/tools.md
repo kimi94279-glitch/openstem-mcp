@@ -9,7 +9,7 @@
 | `render_molecule` | SMILES → 분자 구조식·반응식, 분자식·분자량 | M2 |
 | `plot_function` | 수식 그래프, 특이점·정의역 밖 구간 경고 | M2 |
 | `verify_math` | 식 비교, 방정식, 미적분, 극한, ODE, 행렬, 라플라스, 급수, 확률 | M3 (M5 확장) |
-| `export_document` | 마크다운 → pdf·docx·pptx, 치트시트·시험지·플래시카드 배치 | M4 (M5 확장) |
+| `export_document` | 마크다운 → pdf·docx·pptx·hwpx(한글), 치트시트·시험지·플래시카드 배치 | M4 (M5 확장) |
 | `plot_data` | 측정 데이터 그래프·맞춤 | M5 |
 | `check_units` | 단위·차원 검사, 단위 변환 | M5 |
 | `read_document` | 자료 폴더의 PDF·HWP·HWPX·Office·텍스트·그림 읽기 | M5 |
@@ -94,12 +94,20 @@
 
 ## export_document
 
-- 입력: `markdown`(수식은 `$...$`, 그림은 render_*·plot_*가 돌려준 경로를 이미지 문법으로), `format`(pdf | docx | pptx), `title?`, `layout`(document | cheatsheet | exam | flashcards), `name?`
+- 입력: `markdown`(수식은 `$...$`, 그림은 render_*·plot_*가 돌려준 경로를 이미지 문법으로), `format`(pdf | docx | pptx | hwpx), `title?`, `layout`(document | cheatsheet | exam | flashcards), `name?`
 - 처리: [ARCHITECTURE.md](ARCHITECTURE.md#문서-내보내기)의 순서대로. docx·pptx에는 SVG 대신 PNG(300 dpi)를 넣는다.
 - 반환: 파일 경로, pdf면 첫 쪽 미리보기와 `pages`, pptx면 `slides`, exam이면 `problems`·`answer_page`, flashcards면 `cards`·`tsv_path`, `source_path`(입력 마크다운 `<stem>.md`. 그림 경로는 결과물 폴더 기준 상대 경로로 바꿔 그대로 다시 내보낼 수 있다), `record_path`(입력·`pages`·`problems` 등 결과, 쓰인 그림, pandoc·tectonic 버전)
 - **cheatsheet**(pdf 전용): A4 두 단. `pages`가 1보다 크면 경고해서 LLM이 줄이게 한다. docx·pptx로 부르면 보통 문서로 만들고 그렇게 알린다.
 - **exam**(pdf·docx): 문제(`##`)마다 풀이 공간(기본 4 cm, `{space=N}`으로 조절, 최대 20 cm), `# 정답과 해설`(영어 문서는 `# Answers`·`# Solutions`도 됨)부터 새 쪽. 정답 제목이 없거나 둘이면 컴파일 전에 에러.
 - **flashcards**(pdf 전용): 2열 표(앞면 | 뒷면) → 오려 쓰는 카드 PDF(양면 인쇄용) + 암기 앱 가져오기용 탭 구분 텍스트(`tsv_path`, 확장자 .txt, 수식은 `\(...\)`). 2열이 아닌 표, 빈 면은 에러. 카드보다 긴 글은 줄이고 그 카드 번호를 경고한다.
+- **hwpx**(한글, document·exam만. 다른 배치는 짧은 에러): pandoc에 HWPX 작성기가 없어 `render/hwpx.py`가 검사를 마친 문서 구조를 OWPML zip으로 직접 쓴다(표준 라이브러리 zipfile·문자열 XML, 새 의존성 없음). 구조와 그림 검사는 다른 형식과 같다.
+  - 들어가는 것: 문단, 제목(`#`~`######` → 스타일 "개요 1~6", 개요 수준. 개요 번호는 글자를 비워 보이지 않게 함), 굵게·기울임·밑줄·취소선·위/아래 첨자, 글머리 목록(한글 글머리표), 번호 목록(목록마다 번호 매기기를 따로 두어 1부터 다시 시작), 표(머리 행 굵게, 병합 칸), 그림(docx와 같은 300 dpi PNG, 글 폭에 맞춰 줄임, `{width=50%}`·`{width=6cm}` 속성), 각주(문서 끝에 번호와 함께), 쪽 나누기(`\newpage`만 있는 문단, hwpx에서만), A4 세로·한글 기본 여백, 글꼴 이름 함초롬바탕(본문)·함초롬돋움(제목·코드).
+  - 수식: 분수·지수·첨자·근호·그리스 문자·기본 연산자·sin 같은 함수·`\mathrm{}`·`\text{}`·`\left( \right)`로만 된 수식은 한컴 수식 객체(`hp:equation`, 수식 스크립트, 한글에서 고칠 수 있음)로 바꾼다. 그 밖(∑·∫·행렬·`\vec` 등)은 export의 texcheck를 마친 수식만 `latex.compile_tex`(HANGUL_SETUP·FILE_GUARD 포함)로 한 PDF에 한 쪽씩 컴파일하고, 작업자(`python -m openstem.render.hwpx`, pymupdf)가 300 dpi PNG로 바꿔 그림으로 넣는다. 결과 `warnings`에 몇 개가 수식 객체이고 몇 개가 그림인지 알리고, `equations`·`math_images` 수를 싣는다. 그림으로 넣을 수식이 없으면 tectonic이 없어도 만든다.
+  - exam: 맨 위 학번·이름 줄, 문제(`##`) 아래 풀이 공간(`{space=N}` cm, 빈 문단의 위 간격), `# 정답과 해설`은 새 쪽. `answer_page`는 없다(쪽 계산을 한글이 한다).
+  - zip: `mimetype`(첫 항목, 압축 없음, `application/hwp+zip`), `version.xml`, `META-INF/container.xml`·`manifest.xml`·`container.rdf`, `Contents/content.hpf`·`header.xml`·`section0.xml`, `settings.xml`, `Preview/PrvText.txt`, `BinData/imageN.png`.
+  - 결과: `path`, `note`(한컴오피스에서 열어 확인하라), `check`. 미리보기는 없다.
+  - **한계**: 한컴오피스로 열어 확인하지 못했다(개발 환경에 없다). 시험은 저장소의 HWPX 읽기(`workers/documents.py`)로 글자가 다시 나오는지, zip 구조, XML 형식, 표·그림·수식 요소를 확인하는 데까지다. 줄 배치 정보(`linesegarray`)는 넣지 않아 한글이 열 때 계산한다. 수식 객체의 크기(`hp:sz`)는 어림값이다. 첫 실사용에서 한글로 열어 보고 문제가 있으면 알려 달라.
+  - 참고한 자료와 라이선스: [THIRD_PARTY.md](../THIRD_PARTY.md).
 - **pptx**: pandoc pptx 작성기(수식은 편집 가능한 수식). `##` 하나가 슬라이드 한 장, `::: notes`는 발표자 노트. 미리보기가 없어서 한 장에 줄이 너무 많은 슬라이드와 `##`가 없는 문서를 경고한다.
 - 첫 실행 준비(warmup)는 배치마다 문서를 하나씩 컴파일한다(`export.WARMUP_MARKDOWN`).
 

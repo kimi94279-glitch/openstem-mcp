@@ -241,7 +241,7 @@ def verify_math(
 )
 def export_document(
     markdown: str,
-    format: Literal["pdf", "docx", "pptx"] = "pdf",
+    format: Literal["pdf", "docx", "pptx", "hwpx"] = "pdf",
     title: str = "",
     layout: Literal["document", "cheatsheet", "exam", "flashcards"] = "document",
     name: Annotated[str, Field(description="File name (default: title)")] = "",
