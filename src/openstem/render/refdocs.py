@@ -154,10 +154,19 @@ PPTX_COLORS = (
 )
 
 
-def pptx_theme(xml: str) -> str:
-    xml = re.sub(r"<a:clrScheme .*?</a:clrScheme>", PPTX_COLORS, xml, count=1, flags=re.S)
-    xml = xml.replace('<a:latin typeface="Calibri"/><a:ea typeface=""/>', f'<a:latin typeface="{FONT}"/><a:ea typeface="{FONT}"/>')
+def _sub_required(pattern: str, repl: str, xml: str, what: str, count: int = 0) -> str:
+    """re.sub인데 하나도 바꾸지 못하면 에러다(pandoc 기본 파일이 바뀌면 조용히 서식이 빠지지 않게)."""
+    xml, n = re.subn(pattern, lambda _m: repl, xml, count=count, flags=re.S)
+    if not n:
+        raise ValueError(f"{what} not found in pandoc's default file")
     return xml
+
+
+def pptx_theme(xml: str) -> str:
+    xml = _sub_required(r"<a:clrScheme .*?</a:clrScheme>", PPTX_COLORS, xml, "clrScheme", count=1)
+    return _sub_required(
+        r'<a:latin typeface="Calibri"\s*/>\s*<a:ea typeface=""\s*/>', f'<a:latin typeface="{FONT}"/><a:ea typeface="{FONT}"/>', xml, "theme fonts"
+    )
 
 
 def pptx_master(xml: str) -> str:
@@ -165,9 +174,9 @@ def pptx_master(xml: str) -> str:
     title = re.search(r"<p:titleStyle>.*?</p:titleStyle>", xml, re.S)
     if not title:
         raise ValueError("titleStyle not in reference.pptx")
-    block = title.group(0).replace('algn="ctr"', 'algn="l"', 1)
-    block = block.replace('<a:defRPr sz="3300" kern="1200">', '<a:defRPr sz="3000" b="1" kern="1200">', 1)
-    block = block.replace('<a:schemeClr val="tx1"/>', '<a:schemeClr val="tx2"/>', 1)
+    block = _sub_required(r'algn="ctr"', 'algn="l"', title.group(0), "title alignment", count=1)
+    block = _sub_required(r'<a:defRPr sz="3300" kern="1200">', '<a:defRPr sz="3000" b="1" kern="1200">', block, "title size", count=1)
+    block = _sub_required(r'<a:schemeClr val="tx1"\s*/>', '<a:schemeClr val="tx2"/>', block, "title color", count=1)
     return xml[: title.start()] + block + xml[title.end() :]
 
 
@@ -184,7 +193,13 @@ def _default_data_file(pandoc: str, name: str) -> dict[str, bytes]:
         out = Path(tmp) / name
         subprocess.run([pandoc, "-o", str(out), "--print-default-data-file", name], capture_output=True, check=True)
         with zipfile.ZipFile(out) as z:
-            return {info.filename: z.read(info) for info in z.infolist()}
+            return {info.filename: _lf(info.filename, z.read(info)) for info in z.infolist()}
+
+
+def _lf(name: str, data: bytes) -> bytes:
+    """XML 부분의 줄 끝을 LF로 맞춘다. pandoc 기본 파일은 OS마다 CRLF·LF가 달라(Windows 빌드는 CRLF) 그대로 두면
+    다시 만들 때마다 바이트가 바뀐다. XML에서 태그 사이 줄 끝은 뜻이 없다."""
+    return data.replace(b"\r\n", b"\n") if name.endswith((".xml", ".rels")) else data
 
 
 def _write(parts: dict[str, bytes], path: Path) -> None:

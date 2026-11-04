@@ -514,6 +514,20 @@ def test_reference_docs_match_the_generator():
         assert actual == expected, f"{name}: run `uv run python -m openstem.render.refdocs`"
 
 
+def test_reference_docs_generator_ignores_line_endings():
+    """Windows의 pandoc 기본 파일은 XML 줄 끝이 CRLF다. 어느 OS에서 만들어도 같은 파일이 나와야 한다."""
+    pypandoc = pytest.importorskip("pypandoc")
+    from openstem.render import refdocs
+
+    for path, patch, name in ((refdocs.DOCX_PATH, refdocs.docx_parts, "reference.docx"), (refdocs.PPTX_PATH, refdocs.pptx_parts, "reference.pptx")):
+        parts = refdocs._default_data_file(pypandoc.get_pandoc_path(), name)
+        crlf = {n: refdocs._lf(n, d.replace(b"\r\n", b"\n").replace(b"\n", b"\r\n")) for n, d in parts.items()}
+        with zipfile.ZipFile(path) as z:
+            assert patch(crlf) == {n: z.read(n) for n in z.namelist()}, name
+    with pytest.raises(ValueError, match="theme fonts"):
+        refdocs.pptx_theme('<a:clrScheme name="x"></a:clrScheme><a:latin typeface="Aptos"/>')
+
+
 def test_user_template_replaces_default_styles(output_dir):
     """사용자 template(자료 폴더 안)을 쓰면 그 서식이 들어가고, 폴더 밖·가짜 파일은 거절한다."""
     import subprocess
