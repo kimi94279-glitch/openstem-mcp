@@ -4,15 +4,18 @@
 서버 프로세스 안에서 직접 처리하지 않고, 별도 프로세스 + 타임아웃으로 격리한다.
 - `run()`: 외부 명령(tectonic 등)
 - `run_python()`: 파이썬 작업자 모듈(openstem.workers.*). sympy 파싱(eval)·RDKit 처리를 여기서 한다.
+쓸 수 있으면 운영체제 샌드박스(isolation.py: Linux bwrap, macOS sandbox-exec) 안에서 돌린다.
 """
 
 from __future__ import annotations
 
 import atexit
+import contextlib
 import json
 import logging
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -20,6 +23,8 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from openstem import isolation
 
 DEFAULT_TIMEOUT = 20.0
 TIMEOUT_ENV = "OPENSTEM_TIMEOUT"
@@ -75,10 +80,12 @@ def run(
     timeout: float | None = None,
     input: bytes | None = None,
     env: dict[str, str] | None = None,
+    isolate: isolation.Spec | None = None,
 ) -> RunResult:
     """`args`를 셸 없이 실행한다. 시간이 넘으면 프로세스를 죽이고 timed_out=True를 돌려준다.
 
     env를 주지 않으면 `child_env()`(비밀 환경변수를 뺀 서버 환경)를 쓴다.
+    isolate를 주면 운영체제 샌드박스 안에서 돌린다(격리를 못 쓰면 auto는 그대로, require는 isolation.Unavailable).
 
     stdin은 `input`만 넘기고 막는다: MCP stdio 서버에서 자식이 서버의 stdin(프로토콜 스트림)을 읽으면 안 된다.
     """
@@ -89,6 +96,8 @@ def run(
         kwargs["stdin"] = subprocess.DEVNULL
     else:
         kwargs["input"] = input
+    if isolate is not None:
+        args = isolation.wrap(args, isolate)
     try:
         proc = subprocess.run(
             args,
@@ -118,20 +127,116 @@ _spares: dict[str, subprocess.Popen[bytes]] = {}
 _spares_lock = threading.Lock()
 
 
+# 격리(isolation)를 쓸 때 예비 작업자는 무엇을 처리할지 모르는 채로 미리 뜬다. 그래서 작업자마다 전용 폴더(box)를
+# 하나 만들어 그 폴더만 쓰게 하고, 호출이 오면 입력 파일(payload의 INPUT_KEYS)을 box/in에 복사해 넘기고,
+# 작업자가 box/work에 만든 파일(일반 파일만, 심볼릭 링크는 버린다)을 호출한 작업 폴더로 옮긴다.
+INPUT_KEYS = ("src", "path")  # convert의 src, documents의 path
+_boxes: set[Path] = set()
+_boxes_lock = threading.Lock()
+
+
+_mpl_learned: dict[str, bytes] = {}  # 사용자 캐시가 없을 때 첫 격리 작업자가 만든 글꼴 목록(이 서버 프로세스 동안만)
+MPL_CACHE_MAX = 4 * 1024 * 1024
+
+
+def _mpl_seed() -> Path | None:
+    """matplotlib 글꼴 목록 캐시가 있는 곳(격리 안 작업자에게 복사해 줘서 매번 글꼴을 다시 훑지 않게 한다)."""
+    configured = os.environ.get("MPLCONFIGDIR")
+    candidates = [Path(configured)] if configured else []
+    if sys.platform.startswith("linux"):
+        candidates.append(Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "matplotlib")
+    candidates.append(Path.home() / ".matplotlib")
+    return next((c for c in candidates if any(c.glob("fontlist-*.json"))), None)
+
+
+def _font_lists(folder: Path) -> dict[str, bytes]:
+    found: dict[str, bytes] = {}
+    with contextlib.suppress(OSError):
+        for path in folder.glob("fontlist-*.json"):
+            if path.is_file() and not path.is_symlink() and path.stat().st_size <= MPL_CACHE_MAX:
+                found[path.name] = path.read_bytes()
+    return found
+
+
+def _new_box() -> Path:
+    box = Path(tempfile.mkdtemp(prefix="openstem-box-"))
+    (box / "work").mkdir()
+    (box / "in").mkdir()
+    mpl = box / "mpl"
+    mpl.mkdir()
+    seed = _mpl_seed()
+    for name, data in (_font_lists(seed) if seed is not None else dict(_mpl_learned)).items():
+        (mpl / name).write_bytes(data)
+    with _boxes_lock:
+        _boxes.add(box)
+    return box
+
+
+def _drop_box(box: Path | None) -> None:
+    if box is None:
+        return
+    if not _mpl_learned and _mpl_seed() is None:
+        _mpl_learned.update(_font_lists(box / "mpl"))
+    shutil.rmtree(box, ignore_errors=True)
+    with _boxes_lock:
+        _boxes.discard(box)
+
+
 def _spawn(module: str) -> subprocess.Popen[bytes]:
     kwargs: dict = {"creationflags": subprocess.CREATE_NO_WINDOW} if sys.platform == "win32" else {}
-    proc = subprocess.Popen(
-        [sys.executable, "-I", "-m", module],
-        cwd=tempfile.gettempdir(),
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=child_env({"MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"}),
-        **kwargs,
-    )
+    argv = [sys.executable, "-I", "-m", module]
+    env = child_env({"MPLBACKEND": "Agg", "PYTHONIOENCODING": "utf-8"})
+    cwd = tempfile.gettempdir()
+    box = None
+    if isolation.enabled():  # require인데 못 쓰면 isolation.Unavailable
+        box = _new_box()
+        argv = isolation.wrap(argv, isolation.Spec(write=(box,), python=True, network=False))
+        # 홈 폴더는 격리 안에서 보이지 않는다: 캐시·임시 파일은 box 안에 쓰게 한다
+        env.update(HOME=str(box), TMPDIR=str(box), MPLCONFIGDIR=str(box / "mpl"), XDG_CACHE_HOME=str(box))
+        cwd = str(box)
+    try:
+        proc = subprocess.Popen(
+            argv,
+            cwd=cwd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            **kwargs,
+        )
+    except BaseException:
+        _drop_box(box)
+        raise
+    proc.openstem_box = box  # type: ignore[attr-defined]
     if sys.platform == "win32":
         confine_windows(proc)
     return proc
+
+
+def _box_of(proc: subprocess.Popen[bytes]) -> Path | None:
+    box = getattr(proc, "openstem_box", None)
+    return box if isinstance(box, Path) else None
+
+
+def _box_payload(box: Path, payload: dict[str, Any]) -> dict[str, Any]:
+    """입력 파일을 box/in에 복사하고 payload의 경로를 그 복사본으로 바꾼다(작업자는 원본 위치를 보지 못한다)."""
+    payload = dict(payload)
+    for key in INPUT_KEYS:
+        value = payload.get(key)
+        if isinstance(value, str) and value and Path(value).is_file():
+            src = Path(value)
+            dest = box / "in" / (src.name or "input")
+            shutil.copyfile(src, dest)
+            payload[key] = str(dest)
+    return {**payload, "_cwd": str(box / "work")}
+
+
+def _collect_box(box: Path, cwd: Path) -> None:
+    """작업자가 box/work에 만든 일반 파일을 호출한 작업 폴더로 옮긴다. 링크·폴더·특수 파일은 버린다."""
+    with os.scandir(box / "work") as entries:
+        for entry in entries:
+            if entry.is_file(follow_symlinks=False):
+                shutil.copyfile(entry.path, cwd / entry.name, follow_symlinks=False)
 
 
 # ── Windows 작업자 메모리 상한(Job Object) ───────────────────────────
@@ -269,12 +374,19 @@ def confine_windows(proc: subprocess.Popen[bytes]) -> bool:
 
 def _take_worker(module: str) -> subprocess.Popen[bytes]:
     """미리 띄워 둔 작업자를 꺼내고, 다음 호출에 쓸 작업자를 하나 더 띄운다."""
+    isolated = isolation.enabled()  # require인데 못 쓰면 여기서 isolation.Unavailable
     with _spares_lock:
         spare = _spares.pop(module, None)
         if SPARES_ENABLED:
             _spares[module] = _spawn(module)
-    if spare is not None and spare.poll() is None:
+    # 설정이 바뀌기 전에 띄운 예비 작업자(격리 여부가 다름)나 이미 끝난 작업자는 버린다
+    if spare is not None and spare.poll() is None and (_box_of(spare) is not None) == isolated:
         return spare
+    if spare is not None:
+        spare.kill()
+        with contextlib.suppress(Exception):
+            spare.communicate(timeout=5)
+        _drop_box(_box_of(spare))
     return _spawn(module)
 
 
@@ -283,7 +395,14 @@ def _stop_spares() -> None:
     with _spares_lock:
         for proc in _spares.values():
             proc.kill()
+            with contextlib.suppress(Exception):
+                proc.communicate(timeout=5)
+            _drop_box(_box_of(proc))
         _spares.clear()
+    with _boxes_lock:
+        left = list(_boxes)
+    for box in left:  # --doctor처럼 띄웠다 끝낸 작업자의 폴더
+        _drop_box(box)
 
 
 # 작업자는 import를 마치면 이 줄을 먼저 쓴다. import 시간(처음 실행이면 .pyc 만들기·글꼴 캐시까지 수십 초)은
@@ -312,7 +431,10 @@ def _wait_ready(proc: subprocess.Popen[bytes], timeout: float) -> bool | None:
 def warm_workers(modules: list[str]) -> None:
     """작업자를 한 번씩 띄워 import까지만 해 둔다(.pyc·글꼴 캐시를 미리 만든다). 준비된 것은 예비로 남긴다."""
     for module in modules:
-        proc = _spawn(module)
+        try:
+            proc = _spawn(module)
+        except isolation.Unavailable:
+            return  # require인데 격리를 못 쓴다: 툴을 부를 때 에러를 돌려준다(로그는 isolation이 남겼다)
         if _wait_ready(proc, IMPORT_TIMEOUT) and SPARES_ENABLED:
             with _spares_lock:
                 if module not in _spares:
@@ -320,6 +442,7 @@ def warm_workers(modules: list[str]) -> None:
                     continue
         proc.kill()
         proc.communicate()
+        _drop_box(_box_of(proc))
 
 
 def worker_file(cwd: Path, name: Any) -> Path:
@@ -335,15 +458,29 @@ def run_python(module: str, payload: dict[str, Any], cwd: Path, timeout: float |
 
     -I(격리 모드): 현재 폴더·PYTHON* 환경변수·사용자 site-packages를 보지 않는다.
     작업자는 payload의 `_cwd`(=cwd)로 옮겨 가서 일한다. 규약은 openstem.workers.serve()가 맞춘다.
+    운영체제 격리를 쓰면 작업자는 자기 box/work에서 일하고, 끝나면 만든 파일을 cwd로 옮긴다(위 INPUT_KEYS 설명).
+    OPENSTEM_ISOLATION=require인데 격리를 못 쓰면 WorkerFailed(짧은 안내).
     """
     timeout = timeout if timeout is not None else default_timeout()
-    proc = _take_worker(module)
+    try:
+        proc = _take_worker(module)
+    except isolation.Unavailable as exc:
+        raise WorkerFailed(str(exc)) from None
+    box = _box_of(proc)
+    try:
+        return _talk(proc, box, payload, cwd, timeout)
+    finally:
+        _drop_box(box)
+
+
+def _talk(proc: subprocess.Popen[bytes], box: Path | None, payload: dict[str, Any], cwd: Path, timeout: float) -> dict[str, Any]:
     ready = _wait_ready(proc, IMPORT_TIMEOUT)
     if ready is None:
         proc.kill()
         proc.communicate()
         raise WorkerFailed(f"Worker startup (loading libraries) did not finish within {IMPORT_TIMEOUT:.0f} s.", timed_out=True)
-    data = json.dumps({**payload, "_cwd": str(cwd)}).encode("utf-8")
+    sent = _box_payload(box, payload) if box is not None else {**payload, "_cwd": str(cwd)}
+    data = json.dumps(sent).encode("utf-8")
     try:
         stdout, stderr = proc.communicate(data if ready else None, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -358,4 +495,6 @@ def run_python(module: str, payload: dict[str, Any], cwd: Path, timeout: float |
         raise WorkerFailed("The worker exited without a result: " + " / ".join(tail or [f"exit code {proc.returncode}"])) from None
     if not isinstance(result, dict):
         raise WorkerFailed("The worker returned a malformed result.")
+    if box is not None:
+        _collect_box(box, cwd)
     return result

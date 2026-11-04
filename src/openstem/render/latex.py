@@ -13,7 +13,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from openstem import __version__, output, sandbox
+from openstem import __version__, isolation, output, sandbox
 from openstem.render import tectonic_setup
 
 TECTONIC_ENV = "OPENSTEM_TECTONIC"
@@ -220,6 +220,8 @@ def compile_tex(
 ) -> CompileResult:
     """`source`를 workdir/figure.tex로 쓰고 PDF로 컴파일한다. shell-escape 등은 --untrusted로 끈다.
 
+    OPENSTEM_ISOLATION(isolation.py)에 따라 운영체제 샌드박스 안에서 돌린다. require인데 못 쓰면 짧은 에러.
+
     reruns를 주면 tectonic이 스스로 판단하는 재컴파일 횟수를 그 수로 고정한다(0이면 한 번만).
     """
     exe = find_tectonic()
@@ -227,11 +229,16 @@ def compile_tex(
     tex.write_text(source, encoding="utf-8")
     timeout = timeout if timeout is not None else sandbox.default_timeout()
     extra = ["-r", str(reruns)] if reruns is not None else []
-    res = sandbox.run(
-        [exe, "--untrusted", "--keep-logs", "--chatter", "minimal", "--color", "never", *extra, tex.name],
-        cwd=workdir,
-        timeout=timeout,
-    )
+    try:
+        # 운영체제 격리(쓸 수 있으면): 작업 폴더·번들 캐시만 쓰고 홈 폴더는 보지 못한다. 번들을 받으려고 네트워크는 연다.
+        res = sandbox.run(
+            [exe, "--untrusted", "--keep-logs", "--chatter", "minimal", "--color", "never", *extra, tex.name],
+            cwd=workdir,
+            timeout=timeout,
+            isolate=isolation.tectonic_spec(exe, workdir),
+        )
+    except isolation.Unavailable as exc:
+        return CompileResult(ok=False, errors=[str(exc)])
     if res.timed_out:
         return CompileResult(ok=False, errors=[TIMEOUT_HINT.format(timeout=timeout)], timed_out=True)
 

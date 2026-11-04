@@ -12,6 +12,10 @@
 - read_document `mode="problems"`: 기출·문제지를 문제 번호로 나눈다. `problem="3"`(또는 "3-5")이면 그 문제만, PDF면 문제 영역을 잘라 낸 그림도 함께 돌려준다. PDF·HWP·HWPX·docx·txt.
 - 정확도 벤치마크: 계산 툴 사례 414개를 기계가 판정한다(`scripts/bench.py`, `benchmarks/math/`). 기준선은 0.3.4에서 369개 맞음(0.3.2는 335개). 빠른 일부는 CI의 pytest에서, 전체는 매주 `Benchmark` 워크플로에서 돈다(배포를 막지 않는다). 다른 서비스와 과제를 비교하는 사람 평가 절차는 [docs/benchmarks.md](docs/benchmarks.md).
 
+### 보안
+
+- 운영체제 수준 격리(`OPENSTEM_ISOLATION=auto|off|require`, 기본 auto): Linux는 bubblewrap, macOS는 sandbox-exec 안에서 tectonic과 파이썬 작업자를 돌린다. 입력 검사를 빠져나간 TeX·수식이 있어도 홈 폴더의 파일을 읽거나 작업 폴더 밖에 쓰지 못하고, 작업자는 네트워크도 못 쓴다. 쓸 수 없는 PC(bwrap 미설치, Ubuntu 24.04의 사용자 네임스페이스 제한 등)에서는 auto가 전처럼 돌고 `--doctor`에 한 줄을 남긴다. Windows와 pandoc은 아직 격리하지 않는다([결정 0014](docs/decisions/0014-os-isolation.md)).
+
 ## [0.3.4] - 2026-11-04
 
 감사 후속 개선 릴리스다.

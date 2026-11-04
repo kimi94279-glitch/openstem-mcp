@@ -42,6 +42,24 @@ jobs:
       - name: Pin tectonic cache location
         shell: bash
         run: echo "TECTONIC_CACHE_DIR=${{ runner.temp }}/tectonic-cache" >> "$GITHUB_ENV"
+      # 운영체제 격리(OPENSTEM_ISOLATION, docs/decisions/0014): Linux는 bubblewrap으로 tectonic·작업자를 샌드박스에 넣는다.
+      # tests/test_isolation.py는 GitHub Actions의 ubuntu·macos에서 격리를 못 쓰면 건너뛰지 않고 실패한다.
+      - name: Install bubblewrap (Linux OS isolation)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends bubblewrap
+          bwrap --version
+          # Ubuntu 24.04는 AppArmor로 비특권 사용자 네임스페이스를 막는다(bwrap: "loopback: Failed RTM_NEWADDR").
+          # Ubuntu가 권하는 방법대로 bwrap에만 userns를 허용하는 프로필을 넣는다(sysctl로 전체를 풀지 않는다).
+          if [ -d /etc/apparmor.d ]; then
+            printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' '  userns,' '  include if exists <local/bwrap>' '}' \
+              | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+          bwrap --unshare-all --die-with-parent --ro-bind /usr /usr --symlink usr/lib64 /lib64 --symlink usr/lib /lib --proc /proc --dev /dev /usr/bin/true \
+            && echo "bwrap works" || echo "bwrap cannot create a sandbox here"
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
         with:
           python-version: ${{ matrix.python }}

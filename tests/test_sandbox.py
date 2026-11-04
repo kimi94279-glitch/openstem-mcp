@@ -134,6 +134,17 @@ def test_workers_do_not_see_secrets(monkeypatch):
 WORKERS = ["convert", "documents", "molecule", "plot", "plotdata", "units", "verify"]
 
 
+def _worker_pid(pid: int) -> int:
+    """운영체제 격리(bwrap)를 쓰면 Popen의 pid는 bwrap이고 작업자는 그 자손이다. 가장 깊은 자손을 찾는다."""
+    while True:
+        children = []
+        for task in Path(f"/proc/{pid}/task").iterdir():
+            children += (task / "children").read_text().split()
+        if not children:
+            return pid
+        pid = int(children[0])
+
+
 @pytest.mark.skipif(sys.platform != "linux", reason="RLIMIT_AS는 Linux에서만 확실히 지켜진다(macOS는 무시, Windows는 없음)")
 def test_all_workers_start_under_the_memory_limit():
     """기본 상한 아래에서 작업자 7종이 모두 무거운 import를 마치고 준비 신호를 보낸다. 상한이 실제로 걸려 있다."""
@@ -143,7 +154,7 @@ def test_all_workers_start_under_the_memory_limit():
         proc = sandbox._spawn(f"openstem.workers.{name}")
         try:
             assert sandbox._wait_ready(proc, sandbox.IMPORT_TIMEOUT), name
-            limits = Path(f"/proc/{proc.pid}/limits").read_text()
+            limits = Path(f"/proc/{_worker_pid(proc.pid)}/limits").read_text()
             line = next(ln for ln in limits.splitlines() if ln.startswith("Max address space"))
             assert str(DEFAULT_MEMORY_MB * 1024 * 1024) in line, (name, line)
         finally:
