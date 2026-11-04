@@ -26,6 +26,10 @@ The MCP server is a local program, so it runs in Claude Code and in Cowork on yo
 
 Setup options appear when you enable the plugin: output folder, materials folder, and, for the LMS, your school name plus an access token or calendar URL. All are optional.
 
+## Other hosts and companion tools
+
+The skills follow the [Agent Skills standard](https://agentskills.io/specification), so other hosts can load them too: copy the folders in `skills/` into the host's skills folder (Gemini CLI `~/.gemini/skills` or `.agents/skills`, Codex `.agents/skills`, VS Code `.github/skills`, Cursor `.cursor/skills`). Connect the openstem MCP server (`uvx openstem-mcp`) to that host as well; without it the skills say the tools are missing and link to the install guide. Folder paths, links to each host's documentation, and which ones we could not confirm: [docs/companions.md](https://github.com/kimi94279-glitch/openstem-mcp/blob/main/docs/companions.md). That page also lists other MCP servers and skills for jobs openstem does not do, such as paper search, DOI lookup, editing existing pptx or xlsx files, and writing HWPX.
+
 ## What it runs and connects to
 
 - Runs `uvx openstem-mcp==<version>`, which installs the pinned package and its Python dependencies from PyPI.

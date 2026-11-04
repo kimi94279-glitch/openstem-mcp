@@ -28,3 +28,5 @@ Pick the tool by what is being drawn:
 - `render_molecule`: compare the returned formula and molecular weight with the intended molecule before showing it.
 
 Tell the user where the files were saved (SVG and PDF for documents, PNG for chat). If another skill or tool is better at layout, for example a slide or document skill, still make the figure here and insert the saved file there.
+
+If the openstem tools are not available in this session (for example in claude.ai chat, where only the skills load), say so and point the user to the install guide: https://github.com/kimi94279-glitch/openstem-mcp#설치. Then you may show TikZ code the user can compile elsewhere, but say clearly that it was not rendered or checked.

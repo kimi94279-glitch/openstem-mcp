@@ -13,3 +13,7 @@ openstem's strength is the scientific content: figures, equations and verified n
    - Otherwise use `export_document`: `format="pptx"` (each `##` heading is one slide, `::: notes` for speaker notes), `format="pdf"` or `format="docx"`. Math goes in `$...$`; figures as `![caption](path from render_*/plot_*)`.
 3. Keep slides short: one idea per slide, at most about 6 lines. If export warns that a slide is too long, split it.
 4. Give the user the file path and a one-line outline of what is inside.
+
+For jobs openstem does not do (editing an existing pptx or xlsx, writing HWP files, finding papers or checking DOIs), suggest a tool from the companion list instead of improvising: https://github.com/kimi94279-glitch/openstem-mcp/blob/main/docs/companions.md
+
+If the openstem tools are not available in this session (for example in claude.ai chat, where only the skills load), say so and point the user to the install guide: https://github.com/kimi94279-glitch/openstem-mcp#설치. Then use a document or presentation skill if this session has one, and say that figures and equations were not rendered or checked.
