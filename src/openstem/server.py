@@ -258,10 +258,11 @@ def export_document(
 def read_document(
     path: Annotated[str, Field(description="File in the materials folder; empty or a folder = list files")] = "",
     pages: Annotated[str, Field(description='PDF pages, e.g. "1-3,7"')] = "",
-    mode: Literal["text", "images"] = "text",
+    mode: Literal["text", "images", "problems"] = "text",
     part: int = 1,
+    problem: Annotated[str, Field(description='Problem number or range for mode="problems", e.g. "3" or "3-5"')] = "",
 ) -> CallToolResult:
-    return _to_mcp(documents.read_document(path or None, pages or None, mode, part))
+    return _to_mcp(documents.read_document(path or None, pages or None, mode, part, problem or None))
 
 
 @mcp.tool(

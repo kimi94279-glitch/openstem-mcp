@@ -2,7 +2,7 @@ Make a practice exam from this material: {material}
 
 Answer the user in their language and write the exam in it too (users are mostly Korean students).
 
-If the material is a file on the user's PC (PDF, HWP, Word, PowerPoint, ...), read it with `read_document`; if you don't know the path, call it without path to list the material folder. Read photos and attachments directly in the chat.
+If the material is a file on the user's PC (PDF, HWP, Word, PowerPoint, ...), read it with `read_document`; if you don't know the path, call it without path to list the material folder. Read photos and attachments directly in the chat. When picking problems from a past exam (e.g. "make one like problem 3"), call `read_document` with `mode="problems"` (add `problem="3"` to get exactly that problem's text and, for PDF, a cropped image of its figure).
 
 You write, solve and judge the problems; tools check the math and make the file.
 

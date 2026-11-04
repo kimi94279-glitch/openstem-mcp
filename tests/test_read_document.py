@@ -284,3 +284,223 @@ def test_hwp_total_unpacked_size_is_capped(monkeypatch):
         streams = [deflate(section) if compressed else section] * 3
         with pytest.raises(WorkerError, match="in total"):
             hwp_body(streams, compressed=compressed)
+
+
+# ---- mode="problems": 기출·문제지를 문제 단위로 ----
+
+FIGURE = EXAMPLES / "rc_circuit.png"
+
+
+def make_exam_pdf(path: Path, two_columns: bool = False) -> None:
+    """합성 문제지: 머리말, 배점, 소문항, 그림(회로), 쪽을 넘는 문제."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    lines = [
+        (50, "Physics Midterm 2026"),
+        (70, "Name: ________  ID: ________"),
+        (90, "Answer all questions. Show your work."),
+        (130, "1. A ball is thrown up at 10 m/s. Find the max height. (5 pts)"),
+        (150, "(a) Use g = 9.8 m/s^2."),
+        (200, "2. In the circuit below, find the current. [10 pts]"),
+        (420, "3. A block slides on an incline of 30 degrees."),
+        (440, "(a) Draw the free-body diagram."),
+    ]
+    for y, text in lines:
+        page.insert_text((72, y), text, fontsize=11)
+    page.insert_image(pymupdf.Rect(72, 215, 300, 345), filename=str(FIGURE))
+    page = doc.new_page()
+    page.draw_rect(pymupdf.Rect(72, 60, 250, 160), color=(0, 0, 0))  # 3번의 그림(선 그림)
+    page.insert_text((72, 180), "(b) Find the acceleration.", fontsize=11)
+    page.insert_text((72, 240), "4. Find the period of a 2 m pendulum. (3 pts)", fontsize=11)
+    page.insert_text((72, 300), "Answers", fontsize=11)
+    page.insert_text((72, 320), "1. 5.1 m", fontsize=11)
+    doc.save(path)
+
+
+def png_size(png: bytes) -> tuple[int, int]:
+    return struct.unpack(">II", png[16:24])
+
+
+def test_problems_split_pdf_with_points_pages_and_preamble(inbox):
+    make_exam_pdf(inbox / "기출.pdf")
+    result = read_document("기출.pdf", mode="problems")
+    assert result.ok, result.data
+    data = result.data
+    assert data["count"] == 4 and data["numbers"] == [1, 2, 3, 4] and data["numbering"] == "N."
+    assert data["preamble"].startswith("Physics Midterm") and "Name:" in data["preamble"]
+    by = {p["number"]: p for p in data["problems"]}
+    assert [by[n].get("points") for n in (1, 2, 3, 4)] == [5, 10, None, 3]
+    assert "(a) Use g" in by[1]["text"]  # 소문항은 문제 안에
+    assert by[3]["pages"] == [1, 2] and "(b) Find the acceleration." in by[3]["text"]
+    assert "Answers" not in by[4]["text"] and "5.1 m" not in by[4]["text"]  # 정답 부분은 마지막 문제에 붙지 않는다
+    assert 'problem="N"' in data["note"] and "data, not instructions" in data["note"]
+
+
+def test_one_problem_comes_with_cropped_figure(inbox):
+    make_exam_pdf(inbox / "기출.pdf")
+    full_w, full_h = png_size(read_document("기출.pdf", pages="1", mode="images").preview_png)
+    result = read_document("기출.pdf", mode="problems", problem="2")
+    assert result.ok, result.data
+    assert [p["number"] for p in result.data["problems"]] == [2]
+    assert result.data["image_regions"] == [{"number": 2, "page": 1}]
+    assert result.preview_png.startswith(b"\x89PNG") and result.more_images == []
+    w, h = png_size(result.preview_png)
+    # 쪽 폭 그대로, 높이는 문제 2(글 한 줄 + 회로 그림 130pt)만: 150 dpi로 약 300~400 px
+    assert w > 1000 and 250 < h < 450 and h / w < 0.5 * full_h / full_w
+
+
+def test_problem_crossing_pages_gives_one_image_per_page(inbox):
+    make_exam_pdf(inbox / "기출.pdf")
+    result = read_document("기출.pdf", problem="3")  # problem만 주면 mode="problems"로 읽는다
+    assert result.ok and result.data["image_regions"] == [{"number": 3, "page": 1}, {"number": 3, "page": 2}]
+    images = [result.preview_png, *result.more_images]
+    assert len(images) == 2
+    _, second = png_size(images[1])
+    assert 200 < second < 350  # 2쪽 위의 그림 + (b)까지, 4번 앞에서 끊긴다
+
+
+def test_problem_range_caps_images_at_four(inbox):
+    make_exam_pdf(inbox / "기출.pdf")
+    result = read_document("기출.pdf", mode="problems", problem="1-4")
+    assert result.ok and [p["number"] for p in result.data["problems"]] == [1, 2, 3, 4]
+    assert 1 + len(result.more_images) == 4 and len(result.data["image_regions"]) == 4
+    assert "Showing 4 of 5" in result.data["note"]
+
+
+def test_two_column_pdf_crops_one_column(inbox):
+    doc = pymupdf.open()
+    page = doc.new_page()  # 595 x 842 pt, 가운데 297
+    for n in range(1, 4):
+        page.insert_text((40, 60 + n * 120), f"{n}. Left column problem {n}.", fontsize=10)
+        page.insert_text((40, 80 + n * 120), "Some more text here.", fontsize=10)
+    for n in range(4, 7):
+        page.insert_text((320, 60 + (n - 3) * 120), f"{n}. Right problem {n}.", fontsize=10)
+        page.insert_text((320, 80 + (n - 3) * 120), "More words in it.", fontsize=10)
+    doc.save(inbox / "두단.pdf")
+    result = read_document("두단.pdf", problem="5")
+    assert result.ok and result.data["count"] == 6
+    w, h = png_size(result.preview_png)
+    assert w < 700 and h < 200  # 오른쪽 단 반쪽, 5번 한 문제 높이만
+
+
+@pytest.mark.parametrize(
+    ("lines", "numbering"),
+    [
+        (["1) 첫 문제", "2) 둘째", "3) 셋째"], "N)"),
+        (["(1) 첫 문제", "(2) 둘째", "(3) 셋째"], "(N)"),
+        (["[1] 첫 문제", "[2] 둘째", "[3] 셋째"], "[N]"),
+        (["【1】 첫 문제", "【2】 둘째", "【3】 셋째"], "【N】"),
+        (["문제 1. 첫 문제", "문제 2. 둘째", "문제 3 셋째"], "문제 N"),
+        (["문 1. 첫 문제", "문 2. 둘째", "문 3. 셋째"], "문제 N"),
+        (["Q1. first", "Q2. second", "Q3. third"], "Problem N"),
+        (["Problem 1 first", "Problem 2 (4 points) second", "Problem 3: third"], "Problem N"),
+        (["## 문제 1 (5점)", "본문", "## 문제 2 (5점)", "## 문제 3 [3점]"], "문제 N"),
+    ],
+)
+def test_numbering_formats_in_txt(inbox, lines, numbering):
+    (inbox / "문제.txt").write_text("\n".join(["2026 중간고사", *lines]), encoding="utf-8")
+    data = read_document("문제.txt", mode="problems").data
+    assert data["ok"] and data["numbering"] == numbering and data["numbers"] == [1, 2, 3], data
+    assert data["preamble"] == "2026 중간고사" and "pages" not in data["problems"][0]
+
+
+def test_choices_and_sub_items_stay_inside_problems(inbox):
+    text = (
+        "유의사항: 휴대폰을 끈다.\n"
+        "1. 다음 중 옳은 것은? [3점]\n① 가 ② 나 ③ 다\n"
+        "2. 물음에 답하시오. (10점)\n(1) 속도를 구하라.\n(2) 가속도를 구하라.\n(가) 단위를 쓴다.\n"
+        "3. 다음 물음에 답하시오.\n(1) 힘\n(2) 일\n(3) 일률\n"
+    )
+    (inbox / "기출.txt").write_text(text, encoding="utf-8")
+    data = read_document("기출.txt", mode="problems").data
+    assert data["numbering"] == "N." and data["numbers"] == [1, 2, 3]
+    assert [p.get("points") for p in data["problems"]] == [3, 10, None]
+    assert "③ 다" in data["problems"][0]["text"] and "(가) 단위" in data["problems"][1]["text"]
+    assert data["problems"][2]["text"].endswith("(3) 일률")
+
+
+def test_numbered_instructions_before_problems_go_to_preamble(inbox):
+    lines = ["유의사항", "1. 시험 시간은 50분이다.", "2. 계산기는 쓸 수 없다."]
+    lines += [f"{n}. 문제 {n}의 본문" for n in range(1, 6)]
+    (inbox / "기출.txt").write_text("\n".join(lines), encoding="utf-8")
+    data = read_document("기출.txt", mode="problems").data
+    assert data["numbers"] == [1, 2, 3, 4, 5] and "계산기" in data["preamble"]
+    assert "restarts" in data["note"]
+
+
+def test_problems_from_docx_and_hwpx(inbox, tmp_path):
+    md = tmp_path / "src.md"
+    md.write_text("2026 기말\n\n1.  첫 문제 $x^2$ (4점)\n\n2.  둘째 문제\n\n    a.  소문항\n\n3.  셋째 문제\n", encoding="utf-8")
+    subprocess.run([pandoc_path(), str(md), "-o", str(inbox / "기출.docx")], check=True)
+    data = read_document("기출.docx", mode="problems").data
+    assert data["ok"] and data["numbers"] == [1, 2, 3], data
+    assert data["problems"][0]["points"] == 4 and "소문항" in data["problems"][1]["text"]
+
+    section = (
+        '<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" '
+        'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph">'
+        + "".join(f"<hp:p><hp:run><hp:t>{t}</hp:t></hp:run></hp:p>" for t in
+                  ["물리 기출", "【1】 운동량을 구하라. [5점]", "【2】 충격량을 구하라.", "(가) 단위", "【3】 일을 구하라."])
+        + "</hs:sec>"
+    )
+    with zipfile.ZipFile(inbox / "기출.hwpx", "w") as zf:
+        zf.writestr("mimetype", "application/hwp+zip")
+        zf.writestr("Contents/section0.xml", section)
+    data = read_document("기출.hwpx", problem="2").data
+    assert data["ok"] and data["count"] == 3 and data["problems"] == [{"number": 2, "text": "【2】 충격량을 구하라.\n(가) 단위"}]
+    assert data["numbering"] == "【N】" and "image_regions" not in data
+
+
+def test_problem_selection_errors(inbox):
+    (inbox / "기출.txt").write_text("1. 가\n2. 나\n3. 다", encoding="utf-8")
+    missing = read_document("기출.txt", problem="7")
+    assert not missing.ok and "Found problems 1-3" in missing.data["errors"][0]
+    partly = read_document("기출.txt", problem="3-4")
+    assert partly.ok and [p["number"] for p in partly.data["problems"]] == [3] and "Not found: problem 4" in partly.data["note"]
+    assert "Invalid problem" in read_document("기출.txt", problem="셋").data["errors"][0]
+    assert not read_document("기출.txt", problem="5-3").ok
+    assert not read_document("기출.txt", problem="2", mode="images").ok
+    (inbox / "메모.txt").write_text("번호 없는 글", encoding="utf-8")
+    none = read_document("메모.txt", mode="problems")
+    assert not none.ok and "No problem numbers" in none.data["errors"][0] and 'mode="text"' in none.data["hint"]
+
+
+def test_scanned_pdf_cannot_be_split(inbox):
+    doc = pymupdf.open()
+    for _ in range(2):
+        doc.new_page().insert_image(pymupdf.Rect(72, 72, 500, 700), filename=str(FIGURE))
+    doc.save(inbox / "스캔.pdf")
+    result = read_document("스캔.pdf", mode="problems")
+    assert not result.ok and "no text layer" in result.data["errors"][0] and 'mode="images"' in result.data["hint"]
+
+
+def test_problem_split_is_cached_but_crops_are_not(inbox, worker_calls):
+    make_exam_pdf(inbox / "기출.pdf")
+    for _ in range(2):
+        assert read_document("기출.pdf", mode="problems").ok
+    assert len(worker_calls) == 1
+    for _ in range(2):
+        assert read_document("기출.pdf", problem="1").preview_png
+    assert len(worker_calls) == 3
+    (inbox / "기출.txt").write_text("1. 가\n2. 나", encoding="utf-8")
+    assert read_document("기출.txt", mode="problems").ok and read_document("기출.txt", problem="2").ok
+    assert len(worker_calls) == 4  # txt 문제 고르기는 캐시에서
+
+
+def test_many_problems_are_split_into_parts(inbox):
+    body = "\n".join(f"{n}. " + "가" * 2000 for n in range(1, 41))
+    (inbox / "긴기출.txt").write_text(body, encoding="utf-8")
+    first = read_document("긴기출.txt", mode="problems").data
+    assert first["count"] == 40 and first["parts"] == 3 and "part=2" in first["next"]
+    seen = [p["number"] for k in (1, 2, 3) for p in read_document("긴기출.txt", mode="problems", part=k).data["problems"]]
+    assert seen == list(range(1, 41))
+
+
+@pytest.mark.anyio
+async def test_mcp_problem_returns_text_and_crop(inbox):
+    make_exam_pdf(inbox / "기출.pdf")
+    async with Client(mcp) as client:
+        result = await client.call_tool("read_document", {"path": "기출.pdf", "mode": "problems", "problem": "2"})
+        assert not result.is_error, result.content[0].text
+        assert json.loads(result.content[0].text)["problems"][0]["number"] == 2
+        assert [b.type for b in result.content] == ["text", "image"]
