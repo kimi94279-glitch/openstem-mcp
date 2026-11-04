@@ -76,6 +76,7 @@ openstem-mcp/
 │   │   ├── tectonic_setup.py # tectonic 자동 설치(버전·SHA-256 고정)
 │   │   ├── convert.py        # PDF → SVG/PNG (pymupdf, 작업자 안에서만 쓴다)
 │   │   ├── pages.py          # 변환을 작업자에게 맡기는 서버 쪽 함수
+│   │   ├── hwpx.py           # export_document의 한글(HWPX) 작성기(OWPML 직접 쓰기, 결정 0015)
 │   │   ├── tabular.lua       # 치트시트 표를 tabular로 바꾸는 pandoc 필터
 │   │   ├── exam.lua          # 시험지 배치(풀이 공간, 해설 새 쪽)
 │   │   ├── flashcards.lua    # 플래시카드 배치(양면 인쇄)
@@ -155,7 +156,7 @@ export_document의 처리 순서다. 왜 정규식이 아니라 문서 구조를
 2. 구조 안의 모든 `Math`(texcheck + 중괄호 짝 + 한글 `\text{}` 감싸기)와 `Image`(결과물 폴더 안 파일만, URL·`data:` 등 거절, `%20` 풀어 읽기)를 검사·교체한다. 경로에 공백이 있는 그림(Windows 사용자 이름)은 `<경로>`로 감싸 준다.
 3. 배치(layout)별 규칙을 구조에서 검사한다(시험지: 정답 제목, 카드: 2열 표). 위반은 Lua 필터를 돌리기 전에 파이썬이 짧은 에러로 돌려준다. 배치는 Lua 필터(`render/exam.lua`, `render/flashcards.lua`, `render/tabular.lua`)가 만들고, 서버는 필터가 알아볼 클래스만 붙인다.
 4. 그림을 작업 폴더에 `imgN`으로 옮긴다. docx·pptx는 같은 이름 PDF > SVG > 원본 순으로 300dpi PNG(dpi 정보 기록), pdf는 같은 이름 PDF(벡터) > SVG→PDF. MuPDF는 SVG `clip-path`를 무시해서 SVG를 변환하면 곡선이 축 밖으로 튀어나오므로, 같은 이름 PDF를 먼저 쓴다.
-5. 구조를 docx·pptx나 standalone LaTeX로 바꾸고, PDF는 `latex.compile_tex(..., reruns=0)`로 한 번만 컴파일한다(상호 참조가 없어 한 번이면 되고, 두 번 돌리면 두 배 느리다).
+5. 구조를 docx·pptx나 standalone LaTeX로 바꾸고, PDF는 `latex.compile_tex(..., reruns=0)`로 한 번만 컴파일한다(상호 참조가 없어 한 번이면 되고, 두 번 돌리면 두 배 느리다). hwpx는 pandoc을 거치지 않고 `render/hwpx.py`가 구조를 OWPML로 직접 쓴다: 단순한 수식은 한컴 수식 객체, 나머지 수식은 같은 컴파일 경로로 만든 PNG(변환은 작업자)다([결정 0015](decisions/0015-hwpx-writer.md)).
 6. 첫 쪽 미리보기도 변환 작업자(`pages.preview`)로 만든다.
 
 머리말: `float`로 그림을 그 자리에 고정하고, 한글이 있으면 `HANGUL_SETUP`(굵은 은글꼴 포함)과 그림·표 이름 한글화를 넣는다. 치트시트는 extarticle 9pt 두 단 + titlesec·enumitem으로 간격을 줄이고 제목을 두 단에 걸쳐 한 줄로 둔다. pandoc은 표를 longtable로 쓰는데 두 단에서는 컴파일이 실패해서, 치트시트는 `render/tabular.lua`로 표를 tabular로 바꾼다.

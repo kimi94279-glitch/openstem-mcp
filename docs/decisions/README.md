@@ -17,3 +17,4 @@
 | [0011](0011-moodle-file-id-and-safe-sync.md) | Moodle 파일 id는 파일 주소로 정하고, sync는 디스크 sha256을 보고 덮어쓴다 | 채택 |
 | [0012](0012-tex-defense-in-depth.md) | TeX 방어선 이중화: 토큰 검사 + TeX 쪽 파일 명령 끄기 + 자식 프로세스 제한(0004 보강) | 채택 |
 | [0013](0013-ci-and-release-gate.md) | 시험을 통과해야 배포하고, 설치 경로는 사람이 확인한다 | 채택 |
+| [0015](0015-hwpx-writer.md) | 한글(HWPX) 문서는 OWPML을 직접 쓴다 | 채택 |

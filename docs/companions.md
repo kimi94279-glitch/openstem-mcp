@@ -4,7 +4,7 @@ openstem은 그림·수식 검산·단위·한국 자료(HWP·LMS) 읽기와 시
 
 - 논문 검색, DOI·서지 정보 확인
 - 이미 있는 PPT·XLSX·DOCX 파일 고치기, 디자인을 공들인 발표 자료
-- HWP·HWPX 파일 **쓰기**(openstem은 읽기만 한다)
+- HWP(바이너리) 파일 쓰기, 학교 HWP·HWPX **양식 채우기**(openstem은 마크다운으로 새 HWPX 문서만 만든다)
 - 웹 페이지·음성 같은 자료 폴더 밖의 내용 읽기
 
 이 목록은 추천이나 보증이 아니다. 각 도구는 만든 곳의 라이선스·약관·개인정보 정책을 따르고, openstem과 상관없이 바뀔 수 있다. 붙이기 전에 저장소와 약관을 직접 확인한다.
@@ -26,7 +26,7 @@ openstem은 그림·수식 검산·단위·한국 자료(HWP·LMS) 읽기와 시
 
 - **arxiv-mcp-server**: 겹치지 않는다. 논문을 찾고 받는 일은 이쪽, 받은 PDF를 자료 폴더에 두고 요약·예상문제·치트시트로 만드는 일은 openstem(`read_document`, `export_document`).
 - **paper-search-mcp**: 겹치지 않는다. 보고서의 참고문헌 DOI·서지 정보 확인은 이쪽, 보고서 본문의 그림·검산·내보내기는 openstem.
-- **kordoc**: HWP·HWPX **읽기**가 겹친다(openstem `read_document`는 자료 폴더 안 파일만 읽는다). 학교에 HWPX로 내야 하거나 양식을 채워야 하면 kordoc, 그림·수식·검산은 openstem에서 만들어 넣는다.
+- **kordoc**: HWP·HWPX **읽기**와 마크다운 → HWPX 만들기가 겹친다(openstem `read_document`는 자료 폴더 안 파일만 읽고, `export_document` format="hwpx"는 새 문서만 만든다). 학교 양식을 채우거나 HWP를 HWPX로 바꿔야 하면 kordoc, 그림·수식·검산과 새 보고서는 openstem에서 만든다.
 - **Wolfram MCP**: 계산이 `verify_math`·`check_units`와 겹친다. openstem은 내 PC에서 sympy로 계산하고 아무것도 보내지 않는다. sympy가 못 푸는 식이나 물리 상수·자료 조회가 필요할 때 Wolfram을 쓰되, 입력이 Wolfram 서버로 간다는 점을 안다.
 - **Anthropic 문서 스킬**: 파일 만들기가 `export_document`와 겹친다. 이미 있는 파일을 고치거나 레이아웃·디자인이 중요하면 이 스킬, 그림·수식·검산한 숫자는 openstem에서 만들어 넣는다([0010](decisions/0010-plugin-skills-as-guidance.md), `slides-and-documents` 스킬).
 - **markitdown-mcp**: PDF·워드·파워포인트·엑셀 읽기가 `read_document`와 겹친다. 웹 페이지처럼 자료 폴더 밖의 내용은 markitdown, 자료 폴더의 강의 자료(특히 HWP, 스캔 PDF의 쪽 그림)는 openstem.

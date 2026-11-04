@@ -4,6 +4,14 @@
 
 ## [Unreleased]
 
+### 추가
+
+- export_document `format="hwpx"`: 한글(HWPX) 파일로 내보낸다(배치 document·exam). 단순한 수식은 한글에서 고칠 수 있는 한컴 수식으로, 나머지 수식은 그림으로 넣는다. 결과에 `equations`·`math_images` 수와 "한글로 열어 확인하라"는 note를 싣는다. 한컴오피스로 열어 보는 확인은 아직 못 했다([결정 0015](docs/decisions/0015-hwpx-writer.md)).
+- export_document 참고문헌: `bibliography`(자료 폴더의 .bib·.json·.yaml)와 `citation_style`(chicago·apa·ieee·mla)로 `[@key]` 인용과 참고문헌 목록을 넣는다(pdf·docx·pptx·hwpx). 없는 키는 경고로 알린다.
+- export_document 서식: docx·pptx에 기본 서식(맑은 고딕, A4, 16:9)을 쓰고, `template`으로 학교·수업 양식(.docx·.pptx)을 받는다.
+- read_document `mode="problems"`: 기출·문제지를 문제 번호로 나눈다. `problem="3"`(또는 "3-5")이면 그 문제만, PDF면 문제 영역을 잘라 낸 그림도 함께 돌려준다. PDF·HWP·HWPX·docx·txt.
+- 정확도 벤치마크: 계산 툴 사례 414개를 기계가 판정한다(`scripts/bench.py`, `benchmarks/math/`). 기준선은 0.3.4에서 369개 맞음(0.3.2는 335개). 빠른 일부는 CI의 pytest에서, 전체는 매주 `Benchmark` 워크플로에서 돈다(배포를 막지 않는다). 다른 서비스와 과제를 비교하는 사람 평가 절차는 [docs/benchmarks.md](docs/benchmarks.md).
+
 ## [0.3.4] - 2026-11-04
 
 감사 후속 개선 릴리스다.

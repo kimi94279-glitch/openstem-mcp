@@ -7,7 +7,7 @@ A study kit for science and engineering students. It connects Claude to a local 
 - **Figures**: circuits, free-body diagrams, vectors, geometry and block diagrams (TikZ, from 40 checked examples), function graphs with asymptote and discontinuity warnings, measured-data plots with fitted curves, and molecule drawings from SMILES.
 - **Checking**: verifies solution steps with sympy (equality with counterexamples, equations, inequalities, calculus, ODEs, matrices, Laplace transforms, series, probability) and checks units and dimensions.
 - **Materials**: reads PDF, Korean HWP/HWPX, Word, PowerPoint and Excel files from your materials folder.
-- **Outputs**: A4 cheat sheets, practice exams with a separate answer section, flashcards, slides (pptx), lab reports (docx) and PDFs.
+- **Outputs**: A4 cheat sheets, practice exams with a separate answer section, flashcards, slides (pptx), lab reports (docx or Korean Hangul hwpx) and PDFs, with citations and a reference list from your .bib file.
 - **School LMS (optional, read-only)**: courses, deadlines, announcements and course files from Korean universities' LearningX/Canvas and Coursemos/Moodle LMSs, using a token you create yourself. It never submits or posts.
 
 ## Install
@@ -28,7 +28,7 @@ Setup options appear when you enable the plugin: output folder, materials folder
 
 ## Other hosts and companion tools
 
-The skills follow the [Agent Skills standard](https://agentskills.io/specification), so other hosts can load them too: copy the folders in `skills/` into the host's skills folder (Gemini CLI `~/.gemini/skills` or `.agents/skills`, Codex `.agents/skills`, VS Code `.github/skills`, Cursor `.cursor/skills`). Connect the openstem MCP server (`uvx openstem-mcp`) to that host as well; without it the skills say the tools are missing and link to the install guide. Folder paths, links to each host's documentation, and which ones we could not confirm: [docs/companions.md](https://github.com/kimi94279-glitch/openstem-mcp/blob/main/docs/companions.md). That page also lists other MCP servers and skills for jobs openstem does not do, such as paper search, DOI lookup, editing existing pptx or xlsx files, and writing HWPX.
+The skills follow the [Agent Skills standard](https://agentskills.io/specification), so other hosts can load them too: copy the folders in `skills/` into the host's skills folder (Gemini CLI `~/.gemini/skills` or `.agents/skills`, Codex `.agents/skills`, VS Code `.github/skills`, Cursor `.cursor/skills`). Connect the openstem MCP server (`uvx openstem-mcp`) to that host as well; without it the skills say the tools are missing and link to the install guide. Folder paths, links to each host's documentation, and which ones we could not confirm: [docs/companions.md](https://github.com/kimi94279-glitch/openstem-mcp/blob/main/docs/companions.md). That page also lists other MCP servers and skills for jobs openstem does not do, such as paper search, DOI lookup, editing existing pptx or xlsx files, and filling in an HWP/HWPX form.
 
 ## What it runs and connects to
 

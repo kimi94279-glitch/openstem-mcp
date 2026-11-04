@@ -27,7 +27,7 @@ For other hosts, use the command `uvx` with the argument `openstem-mcp` in the h
 
 Outputs are saved in `~/OpenSTEM/`, or in `OPENSTEM_OUTPUT_DIR` if you set it. Course materials go in `~/OpenSTEM/자료/`, or in `OPENSTEM_INPUT_DIR`. The server does not open files outside these two folders.
 
-To use the skills in Gemini CLI, Codex, VS Code or Cursor, and to find other tools for jobs openstem does not do, see [docs/companions.md](docs/companions.md) (Korean). Examples of such jobs are paper search, DOI lookup, editing existing pptx or xlsx files, and writing HWPX.
+To use the skills in Gemini CLI, Codex, VS Code or Cursor, and to find other tools for jobs openstem does not do, see [docs/companions.md](docs/companions.md) (Korean). Examples of such jobs are paper search, DOI lookup, editing existing pptx or xlsx files, and filling in an HWP/HWPX form.
 
 ## Tools
 
@@ -40,8 +40,8 @@ To use the skills in Gemini CLI, Codex, VS Code or Cursor, and to find other too
 | `render_molecule` | SMILES → molecule or reaction drawing, with molecular formula and weight |
 | `verify_math` | Checks equality (with counterexamples), simplifies, and solves equations and inequalities. Also derivatives, integrals, limits, evaluation, ODEs, matrices, Laplace transforms, series, sums and probability (sympy) |
 | `check_units` | Checks units and dimensions (explains which dimension is off) and converts units |
-| `read_document` | Reads PDF, Korean HWP/HWPX, docx, pptx, xlsx, text and image files from the materials folder, with a listing per folder. Scanned PDFs can be read as page images |
-| `export_document` | Markdown (math, figures, tables) → pdf, docx or pptx. Layouts: document, A4 cheat sheet, exam (answers on separate pages), flashcards |
+| `read_document` | Reads PDF, Korean HWP/HWPX, docx, pptx, xlsx, text and image files from the materials folder, with a listing per folder. Scanned PDFs can be read as page images. Past exams can be split into problems (one problem's text and a cropped image from a PDF) |
+| `export_document` | Markdown (math, figures, tables) → pdf, docx, pptx or Korean Hangul (hwpx). Layouts: document, A4 cheat sheet, exam (answers on separate pages), flashcards. Citations and a reference list from a .bib/.json/.yaml file (APA, IEEE, MLA, Chicago); a clean default docx/pptx style or your own template |
 | `lms` | Read-only access to Korean university LMSs (LearningX/Canvas, Coursemos/Moodle): courses, deadlines (also from a calendar URL), announcements, files, and syncing course files to the materials folder. Sync keeps files you edited and saves the new version as `name (2)`. It never submits or posts. It uses a token you create yourself and never asks for your password |
 
 Prompts: `figure`, `solve`, `exam`, `cheatsheet`, `slides`, `flashcards`, `lab_report`.
