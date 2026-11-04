@@ -2,6 +2,7 @@
 
 import sys
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 
@@ -172,3 +173,120 @@ def test_memory_limit_setting(monkeypatch):
     assert workers.memory_limit_mb() == 0 and workers.limit_memory() is None
     monkeypatch.setenv("OPENSTEM_WORKER_MEMORY_MB", "lots")
     assert workers.memory_limit_mb() == workers.DEFAULT_MEMORY_MB
+
+
+# ── Windows 작업자 메모리 상한(Job Object) ─────────────────────────────
+
+
+class FakeJob:
+    created: ClassVar[list[int]] = []
+
+    def __init__(self, memory_mb: int) -> None:
+        FakeJob.created.append(memory_mb)
+        self.assigned: list[object] = []
+
+    def assign(self, proc) -> None:
+        self.assigned.append(proc)
+
+
+def test_job_limits_flags():
+    flags, limit = sandbox.job_limits(3072)
+    assert flags & sandbox.JOB_OBJECT_LIMIT_PROCESS_MEMORY and flags & sandbox.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+    assert limit == 3072 * 1024 * 1024
+    flags, limit = sandbox.job_limits(0)  # 상한을 끈 경우: 서버가 끝나면 작업자도 끝나는 것만 남긴다
+    assert flags == sandbox.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE and limit == 0
+
+
+def test_confine_windows_makes_one_job_and_reuses_it(monkeypatch):
+    FakeJob.created = []
+    monkeypatch.setenv("OPENSTEM_WORKER_MEMORY_MB", "1500")
+    monkeypatch.setattr(sandbox, "_job", None)
+    monkeypatch.setattr(sandbox, "_job_factory", FakeJob)
+    assert sandbox.confine_windows("proc-1") and sandbox.confine_windows("proc-2")
+    assert FakeJob.created == [1500]
+    assert sandbox._job.assigned == ["proc-1", "proc-2"]
+
+
+def test_confine_windows_failure_is_quiet_and_logged_once(monkeypatch, caplog):
+    calls = []
+
+    def broken(memory_mb: int):
+        calls.append(memory_mb)
+        raise OSError("nested jobs not supported")
+
+    monkeypatch.setattr(sandbox, "_job", None)
+    monkeypatch.setattr(sandbox, "_job_factory", broken)
+    with caplog.at_level("WARNING", logger="openstem.sandbox"):
+        assert sandbox.confine_windows("proc-1") is False
+        assert sandbox.confine_windows("proc-2") is False
+    assert len(calls) == 1
+    assert len([r for r in caplog.records if "memory limit is off" in r.getMessage()]) == 1
+
+
+def test_confine_windows_assign_failure_turns_the_limit_off(monkeypatch, caplog):
+    class RefusingJob(FakeJob):
+        def assign(self, proc) -> None:
+            raise OSError("access denied")
+
+    monkeypatch.setattr(sandbox, "_job", None)
+    monkeypatch.setattr(sandbox, "_job_factory", RefusingJob)
+    with caplog.at_level("WARNING", logger="openstem.sandbox"):
+        assert sandbox.confine_windows("proc-1") is False
+        assert sandbox.confine_windows("proc-2") is False
+    assert len([r for r in caplog.records if "memory limit is off" in r.getMessage()]) == 1
+
+
+def test_spawn_confines_workers_only_on_windows(monkeypatch):
+    confined = []
+    monkeypatch.setattr(sandbox, "confine_windows", confined.append)
+
+    class FakePopen:
+        def __init__(self, args, **kwargs):
+            pass
+
+    monkeypatch.setattr(sandbox.subprocess, "Popen", FakePopen)
+    sandbox._spawn("openstem.workers.verify")
+    assert len(confined) == (1 if sys.platform == "win32" else 0)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Object는 Windows에만 있다")
+def test_windows_worker_runs_inside_the_memory_job(monkeypatch):
+    """실제 job을 만들고 작업자(예비 포함)를 넣는다. job에 상한이 걸려 있고 작업자가 그 안에서 일한다."""
+    import ctypes
+    from ctypes import wintypes
+
+    from openstem.workers import DEFAULT_MEMORY_MB
+
+    monkeypatch.delenv("OPENSTEM_WORKER_MEMORY_MB", raising=False)
+    monkeypatch.setattr(sandbox, "_job", None)
+    monkeypatch.setattr(sandbox, "SPARES_ENABLED", False)
+    proc = sandbox._spawn("openstem.workers.verify")
+    try:
+        job = sandbox._job
+        assert job, "job object was not created"
+        flags, limit = job.limits()
+        assert flags & sandbox.JOB_OBJECT_LIMIT_PROCESS_MEMORY and flags & sandbox.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        assert limit == DEFAULT_MEMORY_MB * 1024 * 1024
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+        inside = wintypes.BOOL()
+        assert kernel32.IsProcessInJob(int(proc._handle), job.handle, ctypes.byref(inside))
+        assert inside.value
+        assert sandbox._wait_ready(proc, sandbox.IMPORT_TIMEOUT)
+    finally:
+        proc.kill()
+        proc.communicate()
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Job Object는 Windows에만 있다")
+def test_windows_memory_blowup_is_reported_as_too_large(monkeypatch):
+    """Windows에서도 폭주 입력이 PC 메모리를 다 쓰기 전에 짧은 에러로 돌아온다(job의 프로세스 커밋 상한)."""
+    from openstem.tools.verify import verify_math
+
+    monkeypatch.setenv("OPENSTEM_WORKER_MEMORY_MB", "900")
+    monkeypatch.setattr(sandbox, "_job", None)  # 새 상한으로 job을 다시 만든다(예전 job은 그대로 열어 둔다)
+    monkeypatch.setattr(sandbox, "SPARES_ENABLED", False)
+    sandbox._stop_spares()
+    result = verify_math("simplify", "2^2^2^2^2^2")
+    assert not result.ok
+    assert "too large to compute" in " ".join(result.data["errors"])

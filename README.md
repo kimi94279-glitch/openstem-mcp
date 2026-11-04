@@ -200,6 +200,11 @@ AI에게 "LMS 지원 학교 목록 보여 줘"라고 하면 목록과 학교별 
 
 ## 자주 묻는 것
 
+- **무엇이 문제인지 모르겠다** — 터미널에서 `uvx openstem-mcp --doctor`를 실행하면 tectonic·TeX 준비·네트워크·폴더 권한·계산 작업자를 점검하고, 끝에 이슈에 붙여 넣을 요약(홈 폴더·비밀 값은 가린 것)을 출력한다. 네트워크 점검을 빼려면 `--offline`, JSON은 `--json`.
+- **업데이트하고 싶다** — 원클릭(.mcpb): 새 `.mcpb`를 받아 다시 설치한다(설정은 남는다). uvx로 쓰는 경우: AI 앱을 완전히 끄고 `uv cache clean openstem-mcp`를 실행한 뒤 다시 켜면 최신판을 받는다. 버전은 `uvx openstem-mcp --version`으로 확인한다.
+- **완전히 지우고 싶다** — Claude Desktop 확장 화면에서 제거하거나 설정 파일에서 `openstem` 항목을 지운 뒤, `uv cache clean openstem-mcp`와 아래 폴더를 지운다. 결과물 폴더(기본 `~/OpenSTEM`)는 사용자 파일이라 직접 판단한다.
+  - tectonic·TeX 패키지(약 300 MB): Windows `%LOCALAPPDATA%\openstem`·`%LOCALAPPDATA%\TectonicProject`, macOS `~/Library/Caches/openstem`·`~/Library/Caches/Tectonic`, Linux `~/.cache/openstem`·`~/.cache/Tectonic`
+  - HTTP 모드 비밀 키(`http-secret`)가 든 설정 폴더: Windows `%APPDATA%\openstem`, macOS `~/Library/Application Support/openstem`, Linux `~/.config/openstem`
 - **처음 그림이 안 나오고 "준비 중"이라고 한다** — 첫 실행 때 TeX 패키지를 받는 중이다(3~5분, 한 번만). 설치 2단계의 `--warmup`을 미리 해 두면 생기지 않는다.
 - **"tectonic을 찾을 수 없다" / "자동 설치 실패"** — 서버가 tectonic을 받지 못한 경우다(인터넷·방화벽, 또는 Windows ARM처럼 공식 파일이 없는 PC). 직접 설치 2단계의 안내대로 tectonic을 설치하고 AI 앱을 다시 켠다. PATH 밖에 두었다면 위 설정 예시처럼 `OPENSTEM_TECTONIC`에 실행 파일 경로를 넣는다.
 - **"TeX 패키지를 내려받지 못했다"** — 처음 쓰는 패키지는 tectonic 서버에서 받아 온다. 인터넷 연결이나 학교·회사 방화벽을 확인한다.

@@ -46,6 +46,10 @@ SOCKET_TIMEOUT = 30.0  # 연결·읽기 한 번
 PROBE_TIMEOUT = 60.0
 CHUNK = 256 * 1024
 LOCK_NAME = ".tectonic-install.lock"
+# 받다가 끊긴(프로세스가 죽은) 임시 파일. 잠금을 잡은 뒤 이보다 오래된 것은 지운다. 잠금이 있어 지금 받는 중인
+# 파일은 다른 프로세스의 것일 수 없지만, 시계가 어긋난 경우를 생각해 넉넉히 둔다.
+STALE_AFTER = 3600.0
+_LEFTOVER_PATTERNS = (".download-*.part", ".tectonic-*")
 
 Progress = Callable[[str], None]
 
@@ -157,6 +161,7 @@ def install(
     try:
         bin_dir.mkdir(parents=True, exist_ok=True)
         with _file_lock(bin_dir / LOCK_NAME, deadline):
+            remove_leftovers(bin_dir)
             if target.is_file():  # 기다리는 동안 다른 스레드·프로세스가 설치했다
                 return target
             say(f"tectonic {VERSION}(LaTeX 엔진)을 공식 릴리스에서 내려받는 중입니다(약 {asset.size / 1e6:.0f} MB)...")
@@ -171,6 +176,24 @@ def install(
         raise SetupError(f"Could not install tectonic into {bin_dir} ({_short(exc)}).") from exc
     finally:
         _thread_lock.release()
+
+
+def remove_leftovers(bin_dir: Path, max_age: float = STALE_AFTER) -> list[Path]:
+    """예전 설치가 끊기며 남긴 임시 파일(.download-*.part, .tectonic-*)을 지운다. 지운 파일을 돌려준다.
+
+    max_age초보다 오래된 것만 지운다. 지우지 못하면(백신이 잡고 있음 등) 그냥 둔다.
+    """
+    removed: list[Path] = []
+    cutoff = time.time() - max_age
+    for pattern in _LEFTOVER_PATTERNS:
+        for path in bin_dir.glob(pattern):
+            try:
+                if path.name != LOCK_NAME and path.is_file() and path.stat().st_mtime < cutoff:
+                    path.unlink()
+                    removed.append(path)
+            except OSError:
+                continue
+    return removed
 
 
 @contextlib.contextmanager
@@ -266,12 +289,18 @@ def _download(url: str, bin_dir: Path, asset: Asset, deadline: float, max_bytes:
                 f"tectonic download failed the SHA-256 check ({total} bytes; corrupted or altered file). Nothing was installed."
             )
         return part
-    except SetupError:
-        part.unlink(missing_ok=True)
-        raise
     except (OSError, http.client.HTTPException, ValueError) as exc:  # URLError·HTTPError·시간 초과는 OSError
-        part.unlink(missing_ok=True)
+        _discard(part)
         raise SetupError(f"Could not download tectonic ({_short(exc)}). Check the internet connection or firewall.") from exc
+    except BaseException:  # SetupError, 그리고 받는 도중의 Ctrl+C·스레드 종료도: 받다 만 파일을 남기지 않는다
+        _discard(part)
+        raise
+
+
+def _discard(path: Path) -> None:
+    """임시 파일을 지운다. 지우지 못해도(백신이 잡고 있음) 원래 에러를 가리지 않는다. 남은 것은 다음 설치가 지운다."""
+    with contextlib.suppress(OSError):
+        path.unlink(missing_ok=True)
 
 
 def _safe_name(name: str) -> bool:

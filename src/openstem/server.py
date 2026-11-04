@@ -466,12 +466,19 @@ def main() -> None:
     )
     parser.add_argument("--warmup", action="store_true", help="TeX 패키지를 미리 내려받고 끝낸다(처음 한 번, 3~5분)")
     parser.add_argument("--version", action="version", version=f"openstem-mcp {__version__}")
+    parser.add_argument(
+        "--doctor", action="store_true", help="설치 상태를 점검하고 이슈에 붙일 요약을 출력한다(--json, --offline과 함께 쓸 수 있다)"
+    )
     http = parser.add_argument_group("HTTP 모드(ChatGPT 등 원격 MCP 클라이언트용)")
     http.add_argument("--http", action="store_true", help="stdio 대신 streamable HTTP로 연다(붙을 주소를 시작할 때 출력)")
     http.add_argument("--port", type=_port, help=f"포트(기본 {remote.DEFAULT_PORT})")
     http.add_argument("--host", help=f"열 주소(기본 {remote.DEFAULT_HOST}: 이 PC 안에서만)")
     http.add_argument("--new-secret", action="store_true", help="주소에 들어가는 비밀 키를 새로 만든다(예전 주소는 404)")
     http.add_argument("--tunnel", action="store_true", help="설치된 cloudflared로 임시 HTTPS 주소를 열어 ChatGPT에 붙일 URL을 출력")
+    if "--doctor" in sys.argv[1:]:  # --json·--offline은 진단 전용 인자라 doctor가 따로 읽는다
+        from openstem import doctor
+
+        sys.exit(doctor.main(sys.argv[1:], WORKERS))
     args = parser.parse_args()
     if not args.http and (args.port is not None or args.host is not None or args.new_secret or args.tunnel):
         parser.error("--port·--host·--new-secret·--tunnel은 --http와 함께 씁니다. 예: openstem-mcp --http --tunnel")

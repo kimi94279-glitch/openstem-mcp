@@ -117,7 +117,7 @@ openstem-mcp/
 
 - `sandbox.run(args, cwd, timeout)`: 외부 실행 파일(tectonic, pandoc)을 셸 없이 실행한다. 시간이 넘으면 죽이고 `timed_out`을 돌려준다. stdin은 막는다(MCP stdio 서버에서 자식이 프로토콜 스트림을 읽으면 안 된다).
 - **자식 환경**: `run`과 작업자는 `sandbox.child_env()` 환경으로 돈다. `OPENSTEM_LMS_*`와 이름에 TOKEN·SECRET·PASSWORD·PASSWD·API_KEY·ACCESS_KEY·CREDENTIAL·PRIVATE_KEY가 든 변수를 빼고, 프록시·인증서·캐시 폴더 변수는 남긴다.
-- **메모리 상한**: POSIX 작업자는 `workers.serve()`가 준비 신호 전에 `RLIMIT_AS`를 건다(기본 3072 MB, `OPENSTEM_WORKER_MEMORY_MB`). `MemoryError`는 "too large to compute" 에러가 된다. macOS는 사실상 먹지 않고 Windows에는 없다([SECURITY.md](../SECURITY.md)).
+- **메모리 상한**: POSIX 작업자는 `workers.serve()`가 준비 신호 전에 `RLIMIT_AS`를 건다(기본 3072 MB, `OPENSTEM_WORKER_MEMORY_MB`). Windows는 `sandbox._spawn`이 작업자(예비 포함)를 띄운 직후 서버에 하나 있는 Job Object에 넣는다(ctypes, `JOB_OBJECT_LIMIT_PROCESS_MEMORY`로 프로세스별 커밋 메모리 상한 + `KILL_ON_JOB_CLOSE`로 서버가 끝나면 작업자도 끝남). job을 만들거나 넣지 못하면(구버전 Windows) 경고 로그 한 줄을 남기고 상한 없이 돈다. 어느 쪽이든 `MemoryError`는 "too large to compute" 에러가 된다. macOS는 RLIMIT_AS가 사실상 먹지 않는다([SECURITY.md](../SECURITY.md)).
 - `sandbox.run_python("openstem.workers.<이름>", payload, cwd)`: sympy·RDKit·pymupdf·pint 처리. `python -I -m`(격리 모드: 현재 폴더·`PYTHON*` 환경변수·사용자 site-packages를 보지 않는다)로 빈 임시 폴더에서 돈다. payload는 stdin JSON, 결과는 stdout 마지막 줄 JSON이다(`workers.serve()`가 규약을 맞춘다). 작업자가 만든 파일은 서버가 `output.new_stem`으로 옮긴다.
 - **준비 신호**: 작업자는 import를 마치면 stdout에 `OPENSTEM-READY`를 쓴다. `run_python`은 그 신호를 `IMPORT_TIMEOUT`(180초)까지 기다린 뒤 payload를 보내고, 그때부터 `timeout`(기본 20초)을 센다. 처음 설치한 환경은 .pyc 만들기·matplotlib 글꼴 캐시 때문에 import만 수십 초가 걸려서, 이것을 입력 처리 시간에 넣으면 첫 호출이 늘 시간 초과가 났다. 무거운 import는 신호 전에 끝내야 한다(plot 작업자는 `_preload()`, pint 준비 약 4초도 신호 전). 신호를 이미 읽은 예비 작업자는 `proc.openstem_ready`로 표시한다.
 - **예비 작업자**: sympy import만 프로세스마다 약 5초라, 모듈마다 작업자를 하나씩 미리 띄워 둔다(import를 끝내고 stdin을 기다린다). 요청이 오면 그 작업자를 쓰고 바로 다음 것을 띄운다. 요청 하나에 프로세스 하나라는 분리는 그대로다. 미리 띄운 작업자는 시스템 임시 폴더에서 시작하므로 payload의 `_cwd`로 옮겨 가서 일한다. 서버가 끝나면 stdin이 닫혀 스스로 끝난다. 끄려면 `sandbox.SPARES_ENABLED = False`.
@@ -186,7 +186,7 @@ export_document의 처리 순서다. 왜 정규식이 아니라 문서 구조를
 | `OPENSTEM_OUTPUT_DIR` | 결과물 폴더 | `~/OpenSTEM` |
 | `OPENSTEM_INPUT_DIR` | 자료 폴더(read_document가 여는 곳) | `<결과물 폴더>/자료` |
 | `OPENSTEM_TIMEOUT` | 외부 입력 처리 시간 제한(초) | 20 |
-| `OPENSTEM_WORKER_MEMORY_MB` | 파이썬 작업자 메모리 상한(MB, POSIX). 0이면 끔 | 3072 |
+| `OPENSTEM_WORKER_MEMORY_MB` | 파이썬 작업자 메모리 상한(MB, POSIX RLIMIT_AS·Windows Job Object). 0이면 끔 | 3072 |
 | `OPENSTEM_TECTONIC` | tectonic 실행 파일 경로 | PATH → 캐시 폴더 |
 | `OPENSTEM_NO_DOWNLOAD` | `1`이면 tectonic 자동 설치를 하지 않는다 | 꺼짐 |
 | `OPENSTEM_CONFIG_DIR` | HTTP 모드 비밀 키를 둘 설정 폴더 | OS별 설정 폴더 |
