@@ -47,7 +47,7 @@ openstem-mcp는 사용자 PC에서 돌며, AI(MCP 호스트)가 보낸 입력과
 
 - **운영체제 수준 격리는 Linux·macOS의 tectonic과 파이썬 작업자에만 있다.**
   - Windows에는 아직 없다(AppContainer·제한 토큰은 다음 단계). Windows의 작업자·tectonic·pandoc은 서버와 같은 사용자 권한으로 돌고(비밀 환경변수만 뺀다) 파일 시스템·네트워크 접근을 운영체제가 막지 않는다. `OPENSTEM_ISOLATION=require`로 두면 Windows에서는 툴이 에러를 돌려준다.
-  - Linux에서 bwrap이 없거나 사용자 네임스페이스를 쓸 수 없으면, macOS에서 `sandbox-exec`가 실패하면(앱 자체가 샌드박스에 든 경우 등) auto는 격리 없이 돈다. `--doctor`의 "운영체제 격리" 줄로 확인한다.
+  - Linux에서 bwrap이 없거나 사용자 네임스페이스를 쓸 수 없으면(Ubuntu 24.04는 기본으로 막는다: bwrap용 AppArmor 프로필을 넣는 법은 [결정 0014](docs/decisions/0014-os-isolation.md)), macOS에서 `sandbox-exec`가 실패하면(앱 자체가 샌드박스에 든 경우 등) auto는 격리 없이 돈다. `--doctor`의 "운영체제 격리" 줄로 확인한다.
   - pandoc(export_document의 변환)은 격리하지 않는다.
   - tectonic은 TeX 번들을 받으려고 네트워크가 열려 있고 번들 캐시에 쓸 수 있다. 격리 안에서 보이는 것(시스템 파일, 작업 폴더, 번들 캐시)은 밖으로 보낼 수 있고, 캐시를 오염시킬 수 있다. 홈 폴더의 사용자 파일은 보이지 않는다.
   - macOS 프로필은 파일 정보(이름·크기·시각)를 막지 않는다(내용은 막는다). `sandbox-exec`는 Apple이 사용 중단으로 표시한 도구다.

@@ -140,6 +140,7 @@ def test_python_paths_never_expose_the_home_folder():
     assert any(os.path.realpath(sys.executable).startswith(os.path.realpath(p)) for p in isolation.python_paths())
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bwrap·sandbox-exec 인자는 POSIX 경로를 다룬다")
 def test_bwrap_mounts_follow_symlinks_and_skip_covered_paths(tmp_path):
     real = tmp_path / "real"
     (real / "lib").mkdir(parents=True)
@@ -155,6 +156,7 @@ def test_bwrap_mounts_follow_symlinks_and_skip_covered_paths(tmp_path):
     assert "--ro-bind" not in args  # 쓰기로 붙인 폴더 안이라 다시 붙이지 않는다
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bwrap·sandbox-exec 인자는 POSIX 경로를 다룬다")
 def test_bwrap_network_only_for_tectonic(tmp_path):
     worker = isolation._bwrap_args(["python"], isolation.Spec(write=(tmp_path,), python=True))
     tex = isolation._bwrap_args(["tectonic"], isolation.tectonic_spec(sys.executable, tmp_path))
@@ -165,6 +167,7 @@ def test_bwrap_network_only_for_tectonic(tmp_path):
     assert home not in binds and "/" not in binds and "/home" not in binds
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="bwrap·sandbox-exec 인자는 POSIX 경로를 다룬다")
 def test_macos_profile_denies_reads_writes_and_worker_network(tmp_path):
     worker = isolation.macos_profile(isolation.Spec(write=(tmp_path,), python=True))
     tex = isolation.macos_profile(isolation.tectonic_spec(sys.executable, tmp_path))

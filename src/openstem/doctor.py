@@ -216,7 +216,8 @@ def check_isolation() -> Check:
         return Check("isolation", "운영체제 격리", SKIP, isolation.describe(), "격리를 켜려면 OPENSTEM_ISOLATION을 지우거나 auto로 두세요.")
     if st.active:
         return Check("isolation", "운영체제 격리", OK, isolation.describe())
-    hint = "Linux는 bubblewrap(bwrap)을 설치하세요. Windows는 아직 지원하지 않습니다(SECURITY.md)."
+    hint = ("Linux는 bubblewrap(bwrap)을 설치하세요. Ubuntu 24.04에서 Operation not permitted면 bwrap용 AppArmor 프로필이 "
+            "필요합니다(docs/decisions/0014). Windows는 아직 지원하지 않습니다(SECURITY.md).")
     return Check("isolation", "운영체제 격리", FAIL if m == "require" else WARN, isolation.describe(), hint)
 
 

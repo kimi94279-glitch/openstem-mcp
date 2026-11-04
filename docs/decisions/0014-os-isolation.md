@@ -27,7 +27,16 @@
 ## 결과
 
 - 검사를 빠져나간 TeX·파이썬 코드가 있어도 홈 폴더의 파일을 읽거나, 작업 폴더 밖에 쓰거나, (작업자는) 네트워크로 보내지 못한다. `tests/test_isolation.py`가 격리 안에서 홈 폴더의 임시 비밀 파일 읽기(`\input` 포함), 작업 폴더 밖 쓰기, 작업자 네트워크가 실패하는 것과, 작업자·tectonic이 정상 동작(템플릿 컴파일, verify_math, read_document)하는 것을 확인한다. 같은 `\input`은 격리를 끄면 비밀 내용이 PDF에 그대로 실린다.
-- CI: ubuntu에는 bubblewrap을 설치하고, GitHub Actions의 ubuntu·macos에서는 격리를 못 쓰면 격리 시험이 건너뛰지 않고 실패한다.
+- **Ubuntu 23.10 이상(24.04 포함)**: AppArmor가 비특권 사용자 네임스페이스를 막아 bwrap이 `loopback: Failed RTM_NEWADDR: Operation not permitted`로 실패한다(CI ubuntu-latest에서 재현). auto는 이때 격리 없이 돈다. 켜려면 bwrap에만 `userns`를 허용하는 프로필을 넣는다(시스템 전체 제한을 푸는 sysctl보다 좁다). 관리자 권한으로 `/etc/apparmor.d/bwrap`에 아래를 쓰고 `sudo apparmor_parser -r /etc/apparmor.d/bwrap`:
+  ```
+  abi <abi/4.0>,
+  include <tunables/global>
+  profile bwrap /usr/bin/bwrap flags=(unconfined) {
+    userns,
+    include if exists <local/bwrap>
+  }
+  ```
+- CI: ubuntu에는 bubblewrap과 위 프로필을 설치하고, GitHub Actions의 ubuntu·macos에서는 격리를 못 쓰면 격리 시험이 건너뛰지 않고 실패한다.
 - 대가: 작업자 하나를 띄울 때 bwrap 설정 몇 ms, 입력 파일 복사(최대 파일 크기 안), 처리 결과 파일 복사가 든다. 사용자 폴더의 글꼴(`~/.fonts` 등)은 격리 안에서 보이지 않아 pymupdf 내장 글꼴로 대신한다. TeX Live 같은 다른 TeX를 `OPENSTEM_TECTONIC`으로 쓰면 그 배포판 경로(예: `/var/lib/texmf`)를 `OPENSTEM_ISOLATION_READ`에 넣어야 한다.
 - **남은 한계**:
   - Windows에는 운영체제 격리가 없다.
