@@ -33,9 +33,9 @@
     { "name": "check_units", "description": "식의 단위·차원이 맞는지 검사하고 단위를 변환한다" },
     { "name": "verify_math", "description": "등식·방정식·미적분·극한·미분방정식·행렬·확률을 계산해 풀이를 검산한다" },
     { "name": "export_document", "description": "PDF·워드·파워포인트, 치트시트·시험지·암기 카드로 내보낸다" },
-    { "name": "read_document", "description": "자료 폴더의 PDF·한글(HWP/HWPX)·워드·파워포인트 파일을 읽는다" },
+    { "name": "read_document", "description": "자료 폴더의 PDF·한글(HWP/HWPX)·워드·파워포인트·엑셀 파일을 읽고, 폴더별 목록을 보여 준다" },
     { "name": "get_template", "description": "검증된 그림 예제(회로·물리·수학·다이어그램)를 읽는다" },
-    { "name": "lms", "description": "학교 LMS의 과목·마감·공지·자료를 읽고 과목 자료를 한 번에 받는다(읽기 전용, 제출·글쓰기 없음). 지원 학교 목록, 토큰이 안 되면 캘린더 주소로 마감만" }
+    { "name": "lms", "description": "학교 LMS의 과목·마감·공지·자료를 읽고 과목 자료를 한 번에 받는다. 다시 받을 때는 새로 올라오거나 바뀐 파일만 받고, 내가 고친 파일은 덮어쓰지 않고 새 버전을 '이름 (2)'로 저장한다. 읽기 전용(제출·글쓰기 없음). 지원 학교 목록, 토큰이 안 되면 캘린더 주소로 마감만" }
   ],
   "keywords": ["stem", "education", "math", "physics", "chemistry", "latex", "tikz", "korean", "이공계", "공부"],
   "license": "(pyproject.toml에서 채운다)",

@@ -21,4 +21,4 @@ You do the reasoning; openstem only computes. Answer in the user's language.
 5. If a figure would help (circuit, free-body diagram, graph), follow the stem-figures skill.
 6. Finish with the answer and a short list of what was verified and how. Never claim a step was verified if you did not call the tool, and never change a verified result by hand.
 
-If the openstem tools are not available in this session, say so and solve without them, marking the answer as unverified.
+If the openstem tools are not available in this session (for example in claude.ai chat, where only the skills load), say so and point the user to the install guide: https://github.com/kimi94279-glitch/openstem-mcp#설치. Then solve without them and mark the answer as unverified.

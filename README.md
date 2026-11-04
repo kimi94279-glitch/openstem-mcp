@@ -1,5 +1,7 @@
 # openstem-mcp
 
+English: [README.en.md](README.en.md)
+
 <!-- mcp-name: io.github.kimi94279-glitch/openstem-mcp -->
 
 이공계 공부를 돕는 MCP 서버. 이미 쓰고 있는 AI(Claude 등)에 붙이면 **학술 그림을 그리고, 풀이를 검산하고, 강의 자료(PDF·한글 파일)를 읽어 예상문제·슬라이드·암기 카드·실험 보고서를 만들** 수 있다.
@@ -237,6 +239,7 @@ Claude Desktop에 개발 버전을 붙이려면(Windows): Claude Desktop을 완�
 | [docs/tools.md](docs/tools.md) | 툴·프롬프트·리소스 명세 |
 | [docs/lms.md](docs/lms.md) | 학교 LMS 연결 |
 | [docs/packaging.md](docs/packaging.md) | 배포·릴리스·설치 묶음 |
+| [docs/companions.md](docs/companions.md) | 함께 쓸 도구(논문 검색·문서 편집·HWP 쓰기), 다른 호스트에서 스킬 쓰기 |
 | [docs/decisions/](docs/decisions/) | 설계 결정 기록 |
 | [SECURITY.md](SECURITY.md) | 보안 범위·한계·취약점 알리기 |
 | [CHANGELOG.md](CHANGELOG.md) | 변경 이력 |

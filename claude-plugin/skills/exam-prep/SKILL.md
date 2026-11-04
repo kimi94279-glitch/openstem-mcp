@@ -19,3 +19,5 @@ description: Turn course materials into exam preparation - summaries, one-page A
 - Add figures from the stem-figures skill by putting the saved file path in markdown image syntax.
 
 Write the document in the user's language and tell them the saved file paths.
+
+If the openstem tools are not available in this session (for example in claude.ai chat, where only the skills load), say so and point the user to the install guide: https://github.com/kimi94279-glitch/openstem-mcp#설치. Then you can still summarize material the user attaches and write problems, but give the result as markdown in the chat and mark answers as unverified.

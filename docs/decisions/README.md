@@ -14,3 +14,6 @@
 | [0008](0008-lms-tokens-not-passwords.md) | LMS는 토큰·캘린더 주소만 받고 읽기만 한다 | 채택 |
 | [0009](0009-http-mode-secret-url.md) | HTTP 모드는 주소 속 비밀 키 + stateless JSON | 채택 |
 | [0010](0010-plugin-skills-as-guidance.md) | 플러그인 스킬은 사용 지침만 담는다 | 채택 |
+| [0011](0011-moodle-file-id-and-safe-sync.md) | Moodle 파일 id는 파일 주소로 정하고, sync는 디스크 sha256을 보고 덮어쓴다 | 채택 |
+| [0012](0012-tex-defense-in-depth.md) | TeX 방어선 이중화: 토큰 검사 + TeX 쪽 파일 명령 끄기 + 자식 프로세스 제한(0004 보강) | 채택 |
+| [0013](0013-ci-and-release-gate.md) | 시험을 통과해야 배포하고, 설치 경로는 사람이 확인한다 | 채택 |
