@@ -6,7 +6,7 @@
 
 ### 추가
 
-- 재현 기록: render_tikz·export_document·plot_function·plot_data·render_molecule가 결과물 옆에 `<이름>.json`(입력, 프로그램 버전, 맞춤 결과, 시각)과 원본(TikZ `.tex`, 내보낸 `.md`, 데이터 `.csv`)을 남긴다. 결과에 `source_path`·`record_path`. `OPENSTEM_RECORD=0`으로 끈다.
+- 재현 기록: render_tikz·export_document·plot_data·plot_function·render_molecule이 결과물 옆에 `<stem>.json`(툴, openstem·의존성 버전, 만든 시각, 입력 전체, 같은 이름의 파일들, 맞춤 계수·표준오차·R²·분자식·분자량·특이점 경고·시험지 문제 같은 결과)을 남긴다. 원본도 함께 저장한다: TikZ 코드는 `<stem>.tex`(서버가 감싼 전체 문서는 `<stem>.full.tex`), 마크다운은 `<stem>.md`(그림 경로는 결과물 폴더 기준 상대 경로), 그래프에 쓰인 데이터는 `<stem>.csv`. 툴 결과에 `source_path`·`record_path`를 싣고, 기록에는 이 PC의 경로를 남기지 않는다. `OPENSTEM_RECORD=0`이면 끈다. 저장에 실패해도 툴은 성공하고 경고 한 줄만 더한다.
 - `openstem-mcp --doctor [--json] [--offline]`: 설치 진단(tectonic, TeX 준비, 번들 서버 연결, 폴더 권한, 계산 작업자, LMS 설정 여부). 끝에 비밀을 가린 이슈용 요약을 출력한다.
 - read_document 추출 결과 캐시(200 MB, `OPENSTEM_READ_CACHE=0`으로 끔). 긴 문서의 다음 묶음(part)을 다시 추출하지 않는다.
 - 문서: 결정 기록 0011(Moodle 파일 id·sync 보호), 0012(TeX 방어선), 0013(CI·배포 관문), 함께 쓸 외부 도구 안내([docs/companions.md](docs/companions.md)), 영어 README([README.en.md](README.en.md)), 업데이트·완전 제거 안내.
