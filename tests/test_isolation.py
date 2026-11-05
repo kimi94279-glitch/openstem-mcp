@@ -187,6 +187,46 @@ def test_bwrap_network_only_for_tectonic(tmp_path):
     assert home not in binds and "/" not in binds and "/home" not in binds
 
 
+@pytest.mark.parametrize(
+    ("platform", "xdg", "expected"),
+    [
+        # tectonic 0.15+는 Rust directories 크레이트: macOS는 번들 id 꼴, Linux는 소문자(XDG는 절대 경로일 때만)
+        ("darwin", None, ["Library/Caches/TectonicProject.Tectonic", "Library/Caches/Tectonic"]),
+        ("linux", None, [".cache/tectonic", ".cache/Tectonic"]),
+        ("linux", "relative/cache", [".cache/tectonic", ".cache/Tectonic"]),
+        ("linux", "ABS", ["xdg/tectonic", "xdg/Tectonic"]),
+    ],
+)
+def test_tectonic_cache_dirs_match_tectonic(monkeypatch, tmp_path, platform, xdg, expected):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("TECTONIC_CACHE_DIR", raising=False)
+    monkeypatch.setattr(isolation.sys, "platform", platform)
+    if xdg is None:
+        monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    else:
+        monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path / "xdg") if xdg == "ABS" else xdg)
+    assert isolation.tectonic_cache_dirs() == [tmp_path / Path(e) for e in expected]
+    monkeypatch.setenv("TECTONIC_CACHE_DIR", str(tmp_path / "pinned"))
+    assert isolation.tectonic_cache_dirs() == [tmp_path / "pinned"]
+
+
+def test_tectonic_spec_creates_only_the_current_cache_dir(monkeypatch, tmp_path):
+    """지금 tectonic의 캐시 폴더는 만들어 붙이고, 예전 이름은 이미 있을 때만 붙인다(빈 폴더를 새로 만들지 않는다)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.delenv("TECTONIC_CACHE_DIR", raising=False)
+    monkeypatch.setattr(isolation.sys, "platform", "darwin")
+    work = tmp_path / "work"
+    work.mkdir()
+    current, older = tmp_path / "Library/Caches/TectonicProject.Tectonic", tmp_path / "Library/Caches/Tectonic"
+    spec = isolation.tectonic_spec(sys.executable, work)
+    assert current.is_dir() and not older.exists()
+    assert spec.write == (work, current) and spec.network
+    older.mkdir()
+    assert isolation.tectonic_spec(sys.executable, work).write == (work, current, older)
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="bwrap·sandbox-exec 인자는 POSIX 경로를 다룬다")
 def test_macos_profile_denies_reads_writes_and_worker_network(tmp_path):
     worker = isolation.macos_profile(isolation.Spec(write=(tmp_path,), python=True))

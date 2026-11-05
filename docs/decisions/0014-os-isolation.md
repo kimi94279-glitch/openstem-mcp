@@ -15,7 +15,7 @@
 - **감지**: 처음 한 번, 실제 작업자와 같은 설정으로 작은 파이썬(`import openstem.workers`, 작업 폴더에 파일 쓰기)을 샌드박스 안에서 띄워 본다. 실행 파일이 있는지만 보지 않는 것은 Ubuntu 24.04의 AppArmor 비특권 사용자 네임스페이스 제한, 컨테이너 안, 이미 샌드박스에 든 앱처럼 "있지만 못 쓰는" 경우가 흔해서다. 실패하면 auto에서는 조용히(경고 한 줄) 격리 없이 돈다.
 - **Linux: bubblewrap(`bwrap`)**. `--unshare-all --die-with-parent --new-session --cap-drop ALL`로 빈 루트를 만들고 필요한 것만 붙인다.
   - 읽기 전용: `/usr`, `/bin`·`/lib*`(링크), `/etc`의 일부(동적 링커, 이름 풀이, 인증서, 글꼴 설정, 시간대, `alternatives`, `texmf`, `passwd`·`group`), 인증서 환경변수(`SSL_CERT_FILE` 등)가 가리키는 파일, 작업자면 `python -I`가 보는 인터프리터·표준 라이브러리·site-packages(편집 설치 경로 포함, 홈 폴더 자체나 그 위는 넣지 않는다), tectonic이면 그 실행 파일.
-  - 쓰기: 작업 폴더만. tectonic은 번들 캐시(`TECTONIC_CACHE_DIR`, 없으면 `~/.cache/Tectonic`·`~/.cache/tectonic`)도 쓴다. 홈 폴더에서 보이는 것은 이것뿐이다.
+  - 쓰기: 작업 폴더만. tectonic은 번들 캐시(`TECTONIC_CACHE_DIR`, 없으면 tectonic이 쓰는 Rust `directories` 크레이트의 위치: Linux `~/.cache/tectonic`, macOS `~/Library/Caches/TectonicProject.Tectonic`. 예전 tectonic의 `Tectonic` 폴더는 이미 있을 때만)도 쓴다. 홈 폴더에서 보이는 것은 이것뿐이다.
   - `/tmp`는 빈 tmpfs, `/proc`·`/dev`는 새로. 경로 중간의 심볼릭 링크는 링크로 다시 만들고 실제 경로를 붙인다.
   - 네트워크: tectonic은 TeX 번들을 받아야 해서 연다(`--share-net`). 파이썬 작업자는 끈다.
 - **macOS: `sandbox-exec` 프로필**. 모든 파일 읽기를 막은 뒤 시스템(`/System`, `/usr`, `/Library`, `/opt/homebrew` 등)·파이썬·캐시·작업 폴더만 연다. 파일 정보(stat)는 어디서나 허용한다(내용은 못 읽는다). 쓰기는 작업 폴더(tectonic은 번들 캐시도)와 `/dev/null` 등만. 작업자는 `(deny network*)`.
@@ -45,4 +45,5 @@
   - pandoc(export_document의 변환)은 아직 격리하지 않는다. pandoc은 `--sandbox`(구조 읽기, 참고문헌 처리)와 작업 폴더 안의 복사본(그림, 서식 템플릿)만 다루지만, 운영체제가 막지는 않는다.
   - macOS 프로필은 파일 정보(stat: 이름·크기·시각)를 막지 않는다. 내용은 못 읽는다. `sandbox-exec`는 Apple이 사용 중단(deprecated)으로 표시한 도구라 앞으로 없어질 수 있다(그러면 auto에서 격리 없이 돈다).
   - auto에서 격리를 못 쓰는 PC(bwrap 미설치, 사용자 네임스페이스 금지)는 예전과 같은 방어선만 있다. 확인은 `openstem-mcp --doctor`의 "운영체제 격리" 줄.
+- **새 PC 설치 점검에서 고친 것(2026-11-05)**: macOS의 tectonic 캐시 이름을 `~/Library/Caches/Tectonic`으로 잘못 붙여, 새 Mac에서 TeX 번들을 처음 받을 때 tectonic이 `Operation not permitted`로 멈췄다(회로도·PDF·HWPX 수식 그림이 모두 실패). CI는 `TECTONIC_CACHE_DIR`을 정하고 번들을 캐시에서 복원해서 이 길을 타지 않았다. 캐시 폴더를 tectonic과 같은 규칙으로 정하고, 깨끗한 가상 PC에서 격리를 켠 채 처음 받는 길을 `Install check` 워크플로가 시험한다.
 - 보안 범위 전체는 [SECURITY.md](../../SECURITY.md).

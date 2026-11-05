@@ -357,22 +357,30 @@ def _build(backend: str, argv: list[str], spec: Spec) -> list[str]:
 
 
 def tectonic_cache_dirs() -> list[Path]:
-    """tectonic이 TeX 번들을 받아 두는 폴더. 격리 안에서도 쓸 수 있게 붙인다(홈 폴더의 유일한 예외)."""
+    """tectonic이 TeX 번들을 받아 두는 폴더. 격리 안에서도 쓸 수 있게 붙인다(홈 폴더의 유일한 예외). 첫째가 지금 tectonic의 것.
+
+    tectonic 0.15 이후(tectonic_io_base::app_dirs)는 TECTONIC_CACHE_DIR, 없으면 Rust `directories` 크레이트의
+    ProjectDirs("", "TectonicProject", "Tectonic").cache_dir()를 쓴다: macOS `~/Library/Caches/TectonicProject.Tectonic`,
+    Linux `$XDG_CACHE_HOME/tectonic`(소문자, 절대 경로일 때만) 또는 `~/.cache/tectonic`. 둘째는 예전 tectonic(app_dirs2)의 이름이다.
+    macOS 이름을 `Tectonic`으로 잘못 두어, 새 Mac에서 첫 번들 내려받기가 격리에 막혔다(2026-11-05 새 PC 설치 점검).
+    """
     configured = os.environ.get("TECTONIC_CACHE_DIR", "").strip()
     if configured:
         return [Path(configured)]
     if sys.platform == "darwin":
-        return [Path.home() / "Library" / "Caches" / "Tectonic"]
-    base = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache")
-    return [base / "Tectonic", base / "tectonic"]  # tectonic 버전에 따라 이름이 다르다
+        base = Path.home() / "Library" / "Caches"
+        return [base / "TectonicProject.Tectonic", base / "Tectonic"]
+    xdg = os.environ.get("XDG_CACHE_HOME", "")
+    base = Path(xdg) if xdg and os.path.isabs(xdg) else Path.home() / ".cache"
+    return [base / "tectonic", base / "Tectonic"]
 
 
 def tectonic_spec(exe: str, workdir: Path) -> Spec:
     """tectonic 한 번: 작업 폴더와 번들 캐시만 쓰고, 실행 파일을 읽고, 번들을 받으려고 네트워크를 연다."""
-    caches = tectonic_cache_dirs()
-    for cache in caches:
-        try:
-            cache.mkdir(parents=True, exist_ok=True)  # 없으면 격리 안에서 만들지 못해 매번 다시 받는다
-        except OSError:
-            pass
+    primary, *older = tectonic_cache_dirs()
+    try:
+        primary.mkdir(parents=True, exist_ok=True)  # 없으면 격리 안에서 만들지 못해 매번 다시 받는다(bwrap은 있는 폴더만 붙인다)
+    except OSError:
+        pass
+    caches = [primary, *(d for d in older if d.is_dir())]  # 예전 이름은 이미 있을 때만(빈 폴더를 새로 만들지 않는다)
     return Spec(write=(workdir, *caches), read=(Path(exe),), network=True)
