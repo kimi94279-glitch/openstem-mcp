@@ -206,6 +206,11 @@ def extract_warnings(log: str) -> list[str]:
 
 def _stderr_errors(stderr: str) -> list[str]:
     lines = [ln.strip() for ln in stderr.splitlines() if ln.strip().startswith("error:")]
+    if not lines:
+        # 로그도 error: 줄도 없다(tectonic이 시작하다 죽음, 샌드박스 거부 등). 원인을 알 수 있게 마지막 두 줄을 싣는다.
+        home = str(Path.home())
+        tail = [ln.strip() for ln in stderr.splitlines() if ln.strip()][-2:]
+        lines = [f"tectonic: {ln.replace(home, '~')[:MAX_ERROR_CHARS]}" for ln in tail]
     return lines[:MAX_ERROR_LINES]
 
 

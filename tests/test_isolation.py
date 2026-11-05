@@ -315,3 +315,17 @@ def test_templates_compile_inside_the_sandbox(active, tectonic, template_id):
     template = found[0]
     result = render_tikz(template.code, template.packages, template.libraries, name=template.name)
     assert result.ok, result.data.get("errors")
+
+
+def test_compile_failure_without_log_shows_tectonic_stderr_tail(monkeypatch):
+    """로그도 error: 줄도 없이 tectonic이 끝나면(샌드박스 거부 등) 마지막 줄을 에러에 싣고 홈 폴더는 ~로 가린다."""
+    from openstem.render import latex
+
+    home = str(Path.home())
+    stderr = f"note: something\nthread 'main' panicked at {home}/.cargo/x.rs:1:2:\nOperation not permitted (os error 1)\n"
+    assert latex._stderr_errors(stderr) == [
+        "tectonic: thread 'main' panicked at ~/.cargo/x.rs:1:2:",
+        "tectonic: Operation not permitted (os error 1)",
+    ]
+    assert latex._stderr_errors("error: first\nerror: second\nother") == ["error: first", "error: second"]
+    assert latex._stderr_errors("") == []

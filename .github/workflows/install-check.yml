@@ -2,7 +2,8 @@
 # 캐시를 쓰지 않으므로 tectonic·TeX 번들·Python 패키지를 처음 쓰는 PC처럼 내려받는다(scripts/install_check.py).
 #   - release-mcpb: 릴리스에 붙은 .mcpb를 Claude Desktop처럼 manifest의 명령으로(uv run --directory <확장 폴더> ...)
 #   - release-uvx: Claude Code 플러그인처럼 PyPI 패키지를 uvx로
-#   - branch-mcpb: 이 커밋으로 .mcpb를 만들어서(다음 릴리스 후보)
+#   - branch-mcpb: 이 커밋으로 .mcpb를 만들어서(다음 릴리스 후보). macOS는 운영체제 격리(sandbox-exec)가 켜진 채로 돈다
+#   - branch-mcpb-bwrap: Linux에서 bubblewrap 격리를 켜고(OPENSTEM_ISOLATION=require) 같은 시험. 격리 안에서 TeX 번들을 처음 받는 길
 # Claude Desktop·Claude Code의 화면(더블클릭 설치, 권한 창)은 확인하지 못한다. docs/packaging.md "릴리스 전 점검"의 사람 점검은 그대로 한다.
 # 배포를 막지 않는다(publish.yml은 이 워크플로를 부르지 않는다). 서드파티 Action은 ci.yml처럼 커밋 SHA로 고정한다.
 name: Install check
@@ -17,9 +18,17 @@ on:
   release:
     types: [published]
   push:
-    paths:
+    paths:  # 설치·첫 실행에 닿는 코드가 바뀔 때만(9대 넘게 도니 매 push마다 돌리지 않는다)
       - ".github/workflows/install-check.yml"
       - "scripts/install_check.py"
+      - "scripts/build_mcpb.py"
+      - "packaging/**"
+      - "pyproject.toml"
+      - "uv.lock"
+      - "src/openstem/isolation.py"
+      - "src/openstem/sandbox.py"
+      - "src/openstem/render/latex.py"
+      - "src/openstem/render/tectonic_setup.py"
 
 permissions:
   contents: read
@@ -34,6 +43,9 @@ jobs:
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
         target: [release-mcpb, release-uvx, branch-mcpb]
+        include:
+          - os: ubuntu-latest
+            target: branch-mcpb-bwrap
     env:
       GH_TOKEN: ${{ github.token }}  # gh release로 릴리스 정보·파일을 받는다. 서버에는 넘기지 않는다(install_check.py)
     steps:
@@ -44,7 +56,7 @@ jobs:
         with:
           enable-cache: false  # 새 PC처럼
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
-        if: matrix.target == 'branch-mcpb'
+        if: startsWith(matrix.target, 'branch-mcpb')
         with:
           node-version: 22
       - name: Pick release
@@ -55,8 +67,21 @@ jobs:
           if [ -z "$VERSION" ] && [ -n "${{ github.event.release.tag_name }}" ]; then VERSION="${{ github.event.release.tag_name }}"; fi
           if [ -z "$VERSION" ]; then VERSION=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName); fi
           echo "VERSION=${VERSION#v}" >> "$GITHUB_ENV"
+      # ci.yml과 같은 설치: Ubuntu 24.04는 AppArmor로 비특권 사용자 네임스페이스를 막아서 bwrap에만 userns를 허용한다.
+      - name: Install bubblewrap
+        if: matrix.target == 'branch-mcpb-bwrap'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends bubblewrap
+          if [ -d /etc/apparmor.d ]; then
+            printf '%s\n' 'abi <abi/4.0>,' 'include <tunables/global>' \
+              'profile bwrap /usr/bin/bwrap flags=(unconfined) {' '  userns,' '  include if exists <local/bwrap>' '}' \
+              | sudo tee /etc/apparmor.d/bwrap >/dev/null
+            sudo apparmor_parser -r /etc/apparmor.d/bwrap
+          fi
+          echo "OPENSTEM_ISOLATION=require" >> "$GITHUB_ENV"
       - name: Get bundle
-        if: endsWith(matrix.target, '-mcpb')
+        if: contains(matrix.target, '-mcpb')
         shell: bash
         run: |
           mkdir -p bundle
