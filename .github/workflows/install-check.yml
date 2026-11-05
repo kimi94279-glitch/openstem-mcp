@@ -1,0 +1,78 @@
+# 새 PC 설치 점검: 깨끗한 가상 PC(Windows·macOS·Linux)에서 사용자가 설치하는 길 그대로 서버를 띄우고 툴을 불러 본다.
+# 캐시를 쓰지 않으므로 tectonic·TeX 번들·Python 패키지를 처음 쓰는 PC처럼 내려받는다(scripts/install_check.py).
+#   - release-mcpb: 릴리스에 붙은 .mcpb를 Claude Desktop처럼 manifest의 명령으로(uv run --directory <확장 폴더> ...)
+#   - release-uvx: Claude Code 플러그인처럼 PyPI 패키지를 uvx로
+#   - branch-mcpb: 이 커밋으로 .mcpb를 만들어서(다음 릴리스 후보)
+# Claude Desktop·Claude Code의 화면(더블클릭 설치, 권한 창)은 확인하지 못한다. docs/packaging.md "릴리스 전 점검"의 사람 점검은 그대로 한다.
+# 배포를 막지 않는다(publish.yml은 이 워크플로를 부르지 않는다). 서드파티 Action은 ci.yml처럼 커밋 SHA로 고정한다.
+name: Install check
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "시험할 릴리스 버전(예: 0.3.4). 비우면 최신 릴리스"
+        required: false
+        default: ""
+  release:
+    types: [published]
+  push:
+    paths:
+      - ".github/workflows/install-check.yml"
+      - "scripts/install_check.py"
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: ${{ matrix.target }} (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        target: [release-mcpb, release-uvx, branch-mcpb]
+    env:
+      GH_TOKEN: ${{ github.token }}  # gh release로 릴리스 정보·파일을 받는다. 서버에는 넘기지 않는다(install_check.py)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2  # v10.3.3
+        with:
+          enable-cache: false  # 새 PC처럼
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1  # v7.1.0
+        if: matrix.target == 'branch-mcpb'
+        with:
+          node-version: 22
+      - name: Pick release
+        if: startsWith(matrix.target, 'release-')
+        shell: bash
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [ -z "$VERSION" ] && [ -n "${{ github.event.release.tag_name }}" ]; then VERSION="${{ github.event.release.tag_name }}"; fi
+          if [ -z "$VERSION" ]; then VERSION=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName); fi
+          echo "VERSION=${VERSION#v}" >> "$GITHUB_ENV"
+      - name: Get bundle
+        if: endsWith(matrix.target, '-mcpb')
+        shell: bash
+        run: |
+          mkdir -p bundle
+          if [ "${{ matrix.target }}" = "release-mcpb" ]; then
+            gh release download "v$VERSION" --repo "$GITHUB_REPOSITORY" -p "*.mcpb" -D bundle
+          else
+            uv run --no-project python scripts/build_mcpb.py
+            mv dist/*.mcpb bundle/
+          fi
+          ls -l bundle
+      # 스크립트는 표준 라이브러리만 쓴다. 저장소의 가상환경을 만들지 않도록 --no-project로 돌린다.
+      - name: Install and call tools
+        shell: bash
+        run: |
+          if [ "${{ matrix.target }}" = "release-uvx" ]; then
+            uv run --no-project python scripts/install_check.py --uvx "openstem-mcp==$VERSION" --label "uvx openstem-mcp==$VERSION"
+          else
+            uv run --no-project python scripts/install_check.py --mcpb bundle/*.mcpb --label "${{ matrix.target }} $(basename bundle/*.mcpb)"
+          fi

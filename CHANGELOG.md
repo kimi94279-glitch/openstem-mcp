@@ -11,6 +11,7 @@
 - export_document 서식: docx·pptx에 기본 서식(맑은 고딕, A4, 16:9)을 쓰고, `template`으로 학교·수업 양식(.docx·.pptx)을 받는다.
 - read_document `mode="problems"`: 기출·문제지를 문제 번호로 나눈다. `problem="3"`(또는 "3-5")이면 그 문제만, PDF면 문제 영역을 잘라 낸 그림도 함께 돌려준다. PDF·HWP·HWPX·docx·txt.
 - 정확도 벤치마크: 계산 툴 사례 414개를 기계가 판정한다(`scripts/bench.py`, `benchmarks/math/`). 기준선은 0.3.4에서 369개 맞음(0.3.2는 335개). 빠른 일부는 CI의 pytest에서, 전체는 매주 `Benchmark` 워크플로에서 돈다(배포를 막지 않는다). 다른 서비스와 과제를 비교하는 사람 평가 절차는 [docs/benchmarks.md](docs/benchmarks.md).
+- 새 PC 설치 점검 워크플로(`Install check`, `scripts/install_check.py`): 깨끗한 Windows·macOS·Linux 가상 PC에서 릴리스의 .mcpb(Claude Desktop과 같은 명령), PyPI 패키지(uvx), 이 커밋으로 만든 .mcpb를 띄워 tectonic 첫 설치부터 회로도·검산·시험지 PDF·HWPX·참고문헌 docx·문서 읽기·`--doctor`까지 불러 본다. 릴리스를 게시하면 자동으로 돈다.
 
 ### 보안
 

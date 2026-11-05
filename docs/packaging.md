@@ -31,7 +31,7 @@ wheel에 templates·prompts·workers가 다 들어가는지, `uvx --from <wheel>
 
 ## 릴리스 전 점검(10분)
 
-CI는 코드가 시험을 통과하는지만 본다. 사용자가 실제로 설치해 쓰는 길은 사람이 확인한다. 0.3.1·0.3.2는 시험이 실패한 채 배포됐다. 릴리스마다 **새 PC나 새 사용자 계정**(개발 환경의 캐시·PATH·설정이 없는 곳)에서 다음을 하고, 결과를 릴리스 노트에 적는다.
+CI는 코드가 시험을 통과하는지만 본다. 사용자가 실제로 설치해 쓰는 길은 사람이 확인한다. 그 가운데 1~3번의 명령 부분(.mcpb를 manifest의 명령으로 띄우기, PyPI 패키지를 uvx로 띄우기, 처음 쓰는 PC의 tectonic·TeX 번들 내려받기, 회로도·검산·시험지 PDF·HWPX·참고문헌 docx·문서 읽기·`--doctor`)은 `Install check` 워크플로([`.github/workflows/install-check.yml`](../.github/workflows/install-check.yml), `scripts/install_check.py`)가 깨끗한 Windows·macOS·Linux 가상 PC에서 한다. 릴리스를 게시하면 자동으로 돌고, Actions 화면에서 버전을 골라 다시 돌릴 수 있다. Claude Desktop·Claude Code 화면(더블클릭 설치, 권한 창)은 확인하지 못하므로 사람 점검은 그대로 한다. 0.3.1·0.3.2는 시험이 실패한 채 배포됐다. 릴리스마다 **새 PC나 새 사용자 계정**(개발 환경의 캐시·PATH·설정이 없는 곳)에서 다음을 하고, 결과를 릴리스 노트에 적는다.
 
 1. **.mcpb 설치 → 회로도 1장**: 이 커밋으로 만든 `.mcpb`를 Claude Desktop에서 더블클릭해 설치하고 "RC 직렬회로 그려 줘"로 그림 1장이 나오는지.
 2. **Claude Code 플러그인 설치 → 검산 1번**: `/plugin install openstem --marketplace kimi94279-glitch/openstem-mcp` 뒤 검산 1번(예: "(x+1)^2 = x^2+2x+1 맞아?").
