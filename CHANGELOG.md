@@ -4,6 +4,10 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-05
+
+감사 후속 기능 릴리스다. 한글(HWPX) 내보내기, 참고문헌, 기출 문제 단위 읽기, 운영체제 격리(Linux·macOS)가 들어간다.
+
 ### 추가
 
 - export_document `format="hwpx"`: 한글(HWPX) 파일로 내보낸다(배치 document·exam). 단순한 수식은 한글에서 고칠 수 있는 한컴 수식으로, 나머지 수식은 그림으로 넣는다. 결과에 `equations`·`math_images` 수와 "한글로 열어 확인하라"는 note를 싣는다. 한컴오피스로 열어 보는 확인은 아직 못 했다([결정 0015](docs/decisions/0015-hwpx-writer.md)).
@@ -122,7 +126,8 @@
 - **M5(0.2.0)**: 대학 전공 계산(verify_math: 미분방정식·행렬·라플라스·급수·합·부등식·확률분포), `check_units`, `plot_data`, `read_document`(PDF·한글·워드·파워포인트), export_document pptx·시험지·플래시카드, `exam`·`slides`·`flashcards`·`lab_report` 프롬프트, 다이어그램 템플릿 10개.
 - **M6(0.3.0)**: 원클릭 설치(.mcpb + tectonic 자동 준비), HTTP 모드(ChatGPT 연결), `lms` 툴(Canvas·Moodle 읽기 전용). 완료 기준: .mcpb를 새 폴더에 풀어 manifest의 명령 그대로 띄우면 모든 툴이 되고, HTTP 모드에 MCP 클라이언트로 붙어 툴을 부르고, 가짜 Canvas·Moodle 서버로 lms의 모든 action이 통과.
 
-[Unreleased]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.4...v0.4.0
 [0.3.4]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/kimi94279-glitch/openstem-mcp/compare/v0.3.1...v0.3.2

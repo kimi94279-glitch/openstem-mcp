@@ -7,12 +7,12 @@
     "url": "https://github.com/kimi94279-glitch/openstem-mcp",
     "source": "github"
   },
-  "version": "0.3.4",
+  "version": "0.4.0",
   "packages": [
     {
       "registryType": "pypi",
       "identifier": "openstem-mcp",
-      "version": "0.3.4",
+      "version": "0.4.0",
       "transport": { "type": "stdio" },
       "environmentVariables": [
         { "name": "OPENSTEM_OUTPUT_DIR", "description": "Folder for generated files (default ~/OpenSTEM)", "isRequired": false },
@@ -24,7 +24,7 @@
     },
     {
       "registryType": "mcpb",
-      "identifier": "https://github.com/kimi94279-glitch/openstem-mcp/releases/download/v0.3.4/openstem-0.3.4.mcpb",
+      "identifier": "https://github.com/kimi94279-glitch/openstem-mcp/releases/download/v0.4.0/openstem-0.4.0.mcpb",
       "fileSha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "transport": { "type": "stdio" }
     }

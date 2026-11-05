@@ -1,6 +1,6 @@
-# 기준선: openstem-mcp 0.3.4 (2026-11-04)
+# 기준선: openstem-mcp 0.4.0 (2026-11-04)
 
-`uv run python scripts/bench.py`로 사례 414개를 지금 코드(0.3.4, 브랜치 `claude/p2-bench-fixes`: 벤치마크가 찾은 문제 20개를 고친 뒤)로 돌린 결과다. 사례별 판정은 [`baseline.json`](baseline.json), 판정 조건은 [`cases/`](cases/), 형식은 [README.md](README.md).
+`uv run python scripts/bench.py`로 사례 414개를 0.4.0에 들어간 코드(벤치마크가 찾은 문제 20개를 고친 뒤)로 돌린 결과다. 사례별 판정은 [`baseline.json`](baseline.json), 판정 조건은 [`cases/`](cases/), 형식은 [README.md](README.md).
 
 환경: Python 3.12.3, Linux x86_64, sympy 1.14.0, pint 0.26.2, RDKit 2026.09.1. 사례를 8개씩 겹쳐 돌려 약 2분(사례마다 작업자 프로세스를 새로 띄우는 시간이 대부분). 툴은 결정적이라 두 번 돌려 같은 판정이 나왔다.
 
