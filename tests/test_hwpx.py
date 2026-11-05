@@ -120,8 +120,12 @@ def test_headings_lists_and_table_structure(output_dir):
     para_prs = {p.get("id"): p.find(f"{HH}heading") for p in header.iter(f"{HH}paraPr")}
     used = [para_prs[p.get("paraPrIDRef")] for p in root.iter(f"{HP}p")]
     kinds = [(h.get("type"), h.get("level")) for h in used]
-    assert ("OUTLINE", "1") in kinds and ("OUTLINE", "2") in kinds  # ##, ###
     assert ("BULLET", "0") in kinds and ("NUMBER", "0") in kinds
+    # 제목(##, ###)은 스타일 "개요 2·3"이지만 개요 번호를 걸지 않는다: 읽는 프로그램이 "1. 1. 목적"처럼 번호를 붙이지 않게
+    assert "OUTLINE" not in {kind for kind, _ in kinds}
+    heading_paras = [p for p in root.iter(f"{HP}p") if p.get("styleIDRef") in ("2", "3")]
+    assert {p.get("styleIDRef") for p in heading_paras} == {"2", "3"}
+    assert all(para_prs[p.get("paraPrIDRef")].get("type") == "NONE" for p in heading_paras)
     styles = {s.get("id"): s.get("name") for s in header.iter(f"{HH}style")}
     assert styles["2"] == "개요 2"
     # 글자 모양: 굵게·기울임이 header에 있다
@@ -189,6 +193,12 @@ def test_raster_image_is_embedded(output_dir):
     assert pics[0].find(f"{HC}img").get("binaryItemIDRef") == "image1"
     assert int(pics[0].find(f"{HP}sz").get("width")) == hwpx.TEXT_WIDTH // 2
     assert "실험 장치" in read_hwpx(path)
+    # 그림 문단은 설명 문단과 같은 쪽에 둔다(keepWithNext)
+    with zipfile.ZipFile(path) as zf:
+        header = ElementTree.fromstring(zf.read("Contents/header.xml"))
+    keep = {p.get("id"): p.find(f"{HH}breakSetting").get("keepWithNext") for p in header.iter(f"{HH}paraPr")}
+    pic_para = next(p for p in section(path).iter(f"{HP}p") if list(p.iter(f"{HP}pic")))
+    assert keep[pic_para.get("paraPrIDRef")] == "1"
 
 
 def test_page_break_and_footnote(output_dir):
@@ -250,6 +260,23 @@ def test_exam_layout(output_dir):
     assert "학번:" in text and "이름:" in text
     answers = [p for p in paras if p.get("pageBreak") == "1"]
     assert len(answers) == 1 and "정답과 해설" in "".join(t.text or "" for t in answers[0].iter(f"{HP}t"))
+    # 풀이 공간: 문단 위 간격을 준 빈 문단. 한글이 저장하는 꼴(글자 없는 run)이어야 다른 프로그램도 건너뛰지 않는다
+    with zipfile.ZipFile(path) as zf:
+        header = ElementTree.fromstring(zf.read("Contents/header.xml"))
+    prev = {p.get("id"): int(p.find(f"{HH}margin/{HC}prev").get("value")) for p in header.iter(f"{HH}paraPr")}
+    spacers = [p for p in paras if not "".join(t.text or "" for t in p.iter(f"{HP}t")) and prev[p.get("paraPrIDRef")] > 0]
+    assert [round(prev[p.get("paraPrIDRef")] / hwpx.HWPUNIT_PER_CM, 1) for p in spacers] == [2.0, 4.0]
+    assert all(len(p) == 1 and len(p[0]) == 0 for p in spacers)  # <hp:run charPrIDRef="…"/>
+
+
+def test_empty_paragraphs_have_no_empty_text_element(output_dir):
+    """빈 <hp:t/>가 든 문단은 LibreOffice(H2Orestart)가 건너뛴다. 빈 문단·빈 표 칸은 글자 없는 run으로 쓴다."""
+    _result, path = export("앞\n\n| a | |\n|---|---|\n| | b |\n\n- \n\n뒤\n")
+    with zipfile.ZipFile(path) as zf:
+        xml = zf.read("Contents/section0.xml").decode("utf-8")
+    assert "<hp:t/>" not in xml and "<hp:t></hp:t>" not in xml
+    cells = list(section(path).iter(f"{HP}tc"))
+    assert len(cells) == 4 and all(list(c.iter(f"{HP}p")) for c in cells)  # 빈 칸에도 문단이 있다
 
 
 # ── TeX이 필요한 시험: 그림으로 넣는 수식, 벡터 그림 ─────────────────

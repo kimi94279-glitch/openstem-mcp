@@ -141,7 +141,7 @@ class _Numbering:
 class Registry:
     """header.xml에 들어갈 글자·문단 모양과 번호 매기기를 모은다. 같은 모양은 같은 id를 쓴다."""
 
-    OUTLINE_ID = 1  # 개요(제목) 번호: 글자를 비워 번호가 보이지 않게 한다
+    OUTLINE_ID = 1  # 구역의 개요 번호 모양(secPr outlineShapeIDRef). 제목 문단은 이것을 쓰지 않는다(heading_para)
     BULLET_CHARS = ("•", "◦", "▪")
 
     def __init__(self) -> None:
@@ -168,8 +168,13 @@ class Registry:
 
 
 def heading_para(level: int) -> ParaStyle:
+    """제목 문단 모양. 스타일은 "개요 N"이지만 개요 번호(heading type OUTLINE)는 걸지 않는다.
+
+    개요 문단은 읽는 프로그램이 번호를 붙인다. 번호 글자를 비워도 LibreOffice(H2Orestart) 등은 "1."을 붙여
+    마크다운의 "## 1. 목적"이 "1. 1. 목적"이 됐다. 대가: 한글 탐색 창의 '개요' 목록에 제목이 자동으로 뜨지 않는다.
+    """
     prev = {1: 1400, 2: 1000, 3: 800}.get(level, 600)
-    return ParaStyle(align="LEFT", prev=prev, next=400, heading=("OUTLINE", Registry.OUTLINE_ID, level - 1), keep_next=True)
+    return ParaStyle(align="LEFT", prev=prev, next=400, keep_next=True)
 
 
 def heading_char(level: int) -> CharStyle:
@@ -673,9 +678,12 @@ class SectionWriter:
         pid = self.reg.para(para)
         page_break = int(self.page_break_next)
         self.page_break_next = False
-        if not runs:
-            runs = [_Run(self.reg.char(CharStyle()), "<hp:t/>")]
-        body = "".join(f'<hp:run charPrIDRef="{r.char}">{r.xml}</hp:run>' for r in self._merge(runs))
+        if runs:
+            body = "".join(f'<hp:run charPrIDRef="{r.char}">{r.xml}</hp:run>' for r in self._merge(runs))
+        else:
+            # 빈 문단은 한글이 저장하는 꼴(글자 없는 run)로 쓴다. 빈 <hp:t/>가 든 문단은 다른 HWPX 읽기 프로그램
+            # (LibreOffice H2Orestart 등)이 통째로 건너뛰어 시험지 풀이 공간이 사라졌다.
+            body = f'<hp:run charPrIDRef="{self.reg.char(CharStyle())}"/>'
         return f'<hp:p id="0" paraPrIDRef="{pid}" styleIDRef="{style_id}" pageBreak="{page_break}" columnBreak="0" merged="0">{body}</hp:p>'
 
     @staticmethod
@@ -906,18 +914,19 @@ class SectionWriter:
             return [self.table(c, ctx)]
         if kind == "Figure":
             _attr, (_short, caption), body = c
-            out = self.figure_body(body, ctx)
             caption_inlines = [i for b in caption for i in (b["c"] if b["t"] in ("Plain", "Para") else [])]
+            out = self.figure_body(body, ctx, keep_next=bool(caption_inlines))
             if caption_inlines:
                 out.append(self._text_para(caption_inlines, _replace(base, align="CENTER", next=600), ctx.char))
             return out
         return []  # RawBlock(이미 거절됨), Null 등
 
-    def figure_body(self, body: list[dict[str, Any]], ctx: _Ctx) -> list[str]:
+    def figure_body(self, body: list[dict[str, Any]], ctx: _Ctx, keep_next: bool = False) -> list[str]:
+        """그림 문단. 설명이 있으면 다음 문단(설명)과 같은 쪽에 두어 그림과 설명이 갈라지지 않게 한다."""
         out = []
         for block in body:
             if block["t"] in ("Plain", "Para"):
-                out.append(self._text_para(block["c"], ParaStyle(align="CENTER", left=ctx.left), ctx.char))
+                out.append(self._text_para(block["c"], ParaStyle(align="CENTER", left=ctx.left, keep_next=keep_next), ctx.char))
             else:
                 out.extend(self.block(block, ctx))
         return out
